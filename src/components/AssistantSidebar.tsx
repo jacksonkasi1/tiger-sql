@@ -10,22 +10,27 @@ import type {
 } from '@/lib/types';
 
 // ** import core packages
-import { useState, useMemo, useCallback, useRef } from 'react';
-import { AssistantRuntimeProvider } from '@assistant-ui/react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
-  useChatRuntime,
-  AssistantChatTransport,
-} from '@assistant-ui/react-ai-sdk';
+  AssistantRuntimeProvider,
+  useThread,
+  type ThreadMessage,
+} from '@assistant-ui/react';
+import { useAISDKRuntime } from '@assistant-ui/react-ai-sdk';
+import { useChat, type UIMessage } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
 
 // ** import utils
 import { useStore } from '@/lib/store';
 import { useLocalStorage } from '@/lib/hooks';
+import { useHotkeys } from 'react-hotkeys-hook';
+import { useChatHistory } from '@/hooks/use-chat-history';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 // ** import ui components
 import { Button } from '@/components/ui/button';
-import { X, Undo2, Redo2, History, Sparkles } from 'lucide-react';
+import { X, Undo2, Redo2, History, Sparkles, Plus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import {
   Tooltip,
@@ -33,14 +38,32 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 
 // ** import assistant-ui components
 import { Thread } from '@/components/assistant-ui/thread';
+import { ChatHistory } from '@/components/assistant-ui/ChatHistory';
+
+// ============================================================================
+// Message Tracker Component (runs inside AssistantRuntimeProvider)
+// ============================================================================
+
+interface MessageTrackerProps {
+  onMessagesChange: (messages: ThreadMessage[]) => void;
+  children: React.ReactNode;
+}
+
+function MessageTracker({ onMessagesChange, children }: MessageTrackerProps) {
+  const messages = useThread((state) => state.messages);
+
+  useEffect(() => {
+    if (messages && messages.length > 0) {
+      // Create a mutable copy of the readonly array
+      onMessagesChange([...messages]);
+    }
+  }, [messages, onMessagesChange]);
+
+  return <>{children}</>;
+}
 
 interface AssistantSidebarProps {
   isOpen?: boolean;
@@ -96,6 +119,12 @@ export function AssistantSidebar({
     [],
   );
   const [historyIndex, setHistoryIndex] = useState(-1);
+
+  // Chat history state
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Initialize chat history
+  const chatHistory = useChatHistory();
 
   // Combine and unify models
   const allModels = useMemo(() => {
@@ -237,13 +266,13 @@ export function AssistantSidebar({
     }
   }, []);
 
-  // Store handleDataPart in a ref for access in transport
+  // Store handleDataPart in a ref for access in fetch handler
   const handleDataPartRef = useRef(handleDataPart);
   handleDataPartRef.current = handleDataPart;
 
-  // Create transport with custom fetch to intercept data parts
+  // Create transport with custom fetch to intercept data parts and pass body
   const transport = useMemo(() => {
-    return new AssistantChatTransport({
+    return new DefaultChatTransport({
       api: '/api/chat',
       body: {
         provider: aiProvider === 'google' ? 'google' : 'openai',
@@ -326,10 +355,237 @@ export function AssistantSidebar({
     listOfTables,
   ]);
 
-  // Create runtime using assistant-ui's native hook
-  const runtime = useChatRuntime({
+  // Create useChat instance with transport
+  // Use currentThreadId as the chat ID so each thread has its own chat instance
+  const chat = useChat({
+    id: chatHistory.currentThreadId || 'default',
     transport,
   });
+
+  // Store chat.setMessages in a ref for use in handlers
+  const setMessagesRef = useRef(chat.setMessages);
+  setMessagesRef.current = chat.setMessages;
+
+  // Create runtime using useAISDKRuntime with direct useChat access
+  // @ts-ignore
+  const runtime = useAISDKRuntime(chat);
+
+  // Handle message updates from the Thread
+  const handleMessagesChange = useCallback(
+    (messages: ThreadMessage[]) => {
+      if (!chatHistory.isInitialized || !chatHistory.currentThreadId) return;
+
+      // Only save when the last assistant message is complete (not streaming)
+      // This prevents saving incomplete messages with empty content
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage && lastMessage.role === 'assistant') {
+        // Check if the message is still being generated
+        const status = lastMessage.status;
+        if (status?.type === 'running' || status?.type === 'requires-action') {
+          // Still streaming, don't save yet
+          return;
+        }
+
+        // Check if assistant message has actual content
+        const hasContent = lastMessage.content.some(
+          (part) =>
+            part.type === 'text' &&
+            (part as { type: 'text'; text: string }).text.trim().length > 0,
+        );
+        if (!hasContent) {
+          // No content yet, don't save
+          return;
+        }
+      }
+
+      // Save thread with current messages
+      chatHistory.saveCurrentThread(
+        messages,
+        aiProvider,
+        aiProvider === 'google' ? googleModel : openaiModel,
+      );
+    },
+    [chatHistory, aiProvider, googleModel, openaiModel],
+  );
+
+  // Create new thread when sidebar opens if no current thread
+  useEffect(() => {
+    if (isOpen && !chatHistory.currentThreadId && chatHistory.isInitialized) {
+      // Check if we have any threads in history
+      if (chatHistory.threads.length > 0) {
+        // Load the most recent thread
+        const recentThreadId = chatHistory.threads[0].id;
+        chatHistory.loadThread(recentThreadId).then((thread) => {
+          if (thread && thread.messages && thread.messages.length > 0) {
+            // Convert to ThreadMessageLike format
+            const messagesToLoad = thread.messages.map((msg) => {
+              const textParts = msg.content
+                .filter(
+                  (part): part is { type: 'text'; text: string } =>
+                    part.type === 'text',
+                )
+                .map((part) => ({ type: 'text' as const, text: part.text }));
+
+              const msgAny = msg as any;
+              if (textParts.length === 0 && msgAny.parts) {
+                const partsContent = msgAny.parts
+                  .filter((p: any) => p.type === 'text' && p.text)
+                  .map((p: any) => ({ type: 'text' as const, text: p.text }));
+                if (partsContent.length > 0) {
+                  textParts.push(...partsContent);
+                }
+              }
+
+              return {
+                id: msg.id,
+                role: msg.role as 'user' | 'assistant' | 'system',
+                content:
+                  textParts.length > 0
+                    ? textParts
+                    : [{ type: 'text' as const, text: ' ' }],
+                createdAt: msg.createdAt ? new Date(msg.createdAt) : new Date(),
+                // Always mark loaded messages as complete
+                ...(msg.role === 'assistant' && {
+                  status: { type: 'complete' as const },
+                }),
+              };
+            });
+
+            // Convert to UIMessage format and set via AI SDK
+            const uiMessages: UIMessage[] = messagesToLoad.map((msg) => ({
+              id: msg.id,
+              role: msg.role as 'user' | 'assistant' | 'system',
+              content: '',
+              parts: msg.content.map((part) => ({
+                type: 'text' as const,
+                text: (part as { type: 'text'; text: string }).text,
+              })),
+              createdAt: msg.createdAt,
+            }));
+            setMessagesRef.current(uiMessages);
+          }
+        });
+      } else {
+        // Create a new thread if no history exists
+        chatHistory.createNewThread();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, chatHistory.isInitialized]);
+
+  // Chat history handlers
+  const handleNewThread = useCallback(() => {
+    // Clear messages via AI SDK setMessages
+    setMessagesRef.current([]);
+    // Create new thread ID in chat history
+    chatHistory.createNewThread();
+    // Go back to chat view
+    setShowHistory(false);
+  }, [chatHistory]);
+
+  useHotkeys(
+    ['meta+n', 'ctrl+n'],
+    (e) => {
+      e.preventDefault();
+      if (isOpen) {
+        handleNewThread();
+      }
+    },
+    { enableOnFormTags: true, preventDefault: true },
+    [isOpen, handleNewThread],
+  );
+
+  const handleSelectThread = useCallback(
+    async (threadId: string) => {
+      console.log('[handleSelectThread] Loading thread:', threadId);
+      const thread = await chatHistory.loadThread(threadId);
+      console.log('[handleSelectThread] Loaded thread:', thread);
+
+      if (thread && thread.messages && thread.messages.length > 0) {
+        // Update the current thread ID in chat history state
+        chatHistory.setCurrentThreadId(threadId);
+
+        // Convert ThreadMessage[] to ThreadMessageLike[] format for runtime.thread.reset()
+        // The format is: { id, role, content: [{type, text}], createdAt, status? }
+        const messagesToLoad = thread.messages.map((msg) => {
+          // Extract text content from the content array
+          const textParts = msg.content
+            .filter(
+              (part): part is { type: 'text'; text: string } =>
+                part.type === 'text',
+            )
+            .map((part) => ({ type: 'text' as const, text: part.text }));
+
+          // For assistant messages with empty content, check if there's parts data
+          // Also handle messages that might have 'parts' instead of 'content'
+          const msgAny = msg as any;
+          if (textParts.length === 0 && msgAny.parts) {
+            const partsContent = msgAny.parts
+              .filter((p: any) => p.type === 'text' && p.text)
+              .map((p: any) => ({ type: 'text' as const, text: p.text }));
+            if (partsContent.length > 0) {
+              textParts.push(...partsContent);
+            }
+          }
+
+          return {
+            id: msg.id,
+            role: msg.role as 'user' | 'assistant' | 'system',
+            content:
+              textParts.length > 0
+                ? textParts
+                : [{ type: 'text' as const, text: ' ' }], // Fallback to space to avoid empty
+            createdAt: msg.createdAt ? new Date(msg.createdAt) : new Date(),
+            // Always mark loaded messages as complete - they were saved after completion
+            ...(msg.role === 'assistant' && {
+              status: { type: 'complete' as const },
+            }),
+          };
+        });
+
+        console.log('[handleSelectThread] Messages to load:', messagesToLoad);
+
+        // Convert messages to AI SDK UIMessage format
+        const uiMessages: UIMessage[] = messagesToLoad.map((msg) => ({
+          id: msg.id,
+          role: msg.role as 'user' | 'assistant' | 'system',
+          content: '',
+          parts: msg.content.map((part) => ({
+            type: 'text' as const,
+            text: (part as { type: 'text'; text: string }).text,
+          })),
+          createdAt: msg.createdAt,
+        }));
+
+        console.log('[handleSelectThread] Setting UIMessages:', uiMessages);
+
+        // Clear messages first, then set new messages after a tick
+        // This forces a clean slate before loading the new thread
+        chat.setMessages([]);
+
+        // Use requestAnimationFrame to ensure the clear has been processed
+        requestAnimationFrame(() => {
+          chat.setMessages(uiMessages);
+        });
+      } else {
+        console.log(
+          '[handleSelectThread] No messages to load, creating new thread',
+        );
+        // If no messages, clear messages for new thread
+        setMessagesRef.current([]);
+        chatHistory.setCurrentThreadId(threadId);
+      }
+      setShowHistory(false);
+    },
+    [chatHistory, chat],
+  );
+
+  const handleDeleteThread = useCallback(
+    async (threadId: string) => {
+      await chatHistory.deleteThread(threadId);
+    },
+    [chatHistory],
+  );
 
   // Undo/Redo handlers
   const canUndo = historyIndex >= 0;
@@ -388,142 +644,139 @@ export function AssistantSidebar({
     toast.info('Redo', { description: 'Reapplied operation' });
   }, [canRedo, historyIndex, operationHistory, tables, updateTablesFromAI]);
 
-  const clearHistory = useCallback(() => {
-    setOperationHistory([]);
-    setHistoryIndex(-1);
-  }, []);
-
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-y-0 right-0 z-[60] w-[400px] min-w-[320px] max-w-[90vw] bg-background border-l shadow-2xl flex flex-col sm:max-w-[50vw]">
-      <TooltipProvider>
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2 border-b min-h-[50px]">
-          <div className="flex items-center gap-2 px-2">
-            <Sparkles className="size-4 text-primary" />
-            <span className="font-semibold text-sm">Assistant</span>
-            <Badge
-              variant="outline"
-              className="ml-1 h-5 px-1.5 text-[10px] font-normal text-muted-foreground bg-muted/50"
-            >
-              {aiProvider === 'google' ? 'Gemini' : 'OpenAI'}
-            </Badge>
-          </div>
+    <div
+      className={cn(
+        'fixed inset-y-0 right-0 z-[60] w-[400px] min-w-[320px] max-w-[90vw] bg-background border-l shadow-2xl flex flex-col sm:max-w-[50vw] transition-transform duration-300',
+        isOpen ? 'translate-x-0' : 'translate-x-full',
+      )}
+    >
+      <AssistantRuntimeProvider runtime={runtime}>
+        <MessageTracker onMessagesChange={handleMessagesChange}>
+          <TooltipProvider>
+            {showHistory ? (
+              <ChatHistory
+                threads={chatHistory.threads}
+                recentThreads={chatHistory.recentThreads}
+                currentThreadId={chatHistory.currentThreadId}
+                isLoading={chatHistory.isLoading}
+                onSelectThread={handleSelectThread}
+                onDeleteThread={handleDeleteThread}
+                onNewThread={handleNewThread}
+                onSearch={chatHistory.searchThreads}
+                onClearHistory={chatHistory.clearHistory}
+                onBack={() => setShowHistory(false)}
+                groupThreadsByTime={chatHistory.groupThreadsByTime}
+              />
+            ) : (
+              <>
+                {/* Header */}
+                <div className="flex items-center justify-between px-3 py-2 border-b min-h-[50px]">
+                  <div className="flex items-center gap-2 px-2">
+                    <Sparkles className="size-4 text-primary" />
+                    <span className="font-semibold text-sm">Assistant</span>
+                    <Badge
+                      variant="outline"
+                      className="ml-1 h-5 px-1.5 text-[10px] font-normal text-muted-foreground bg-muted/50"
+                    >
+                      {aiProvider === 'google' ? 'Gemini' : 'OpenAI'}
+                    </Badge>
+                  </div>
 
-          <div className="flex items-center gap-0.5">
-            {/* Undo/Redo */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={handleUndo}
-                  disabled={!canUndo}
-                >
-                  <Undo2 className="size-4 text-muted-foreground" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Undo</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={handleRedo}
-                  disabled={!canRedo}
-                >
-                  <Redo2 className="size-4 text-muted-foreground" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Redo</TooltipContent>
-            </Tooltip>
-
-            {/* History */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  disabled={operationHistory.length === 0}
-                >
-                  <History className="size-4 text-muted-foreground" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-64 p-0" align="end">
-                <div className="flex items-center justify-between p-2 border-b bg-muted/30">
-                  <span className="text-xs font-medium">History</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={clearHistory}
-                    className="h-5 text-[10px] px-2"
-                  >
-                    Clear
-                  </Button>
-                </div>
-                <div className="max-h-64 overflow-y-auto p-1">
-                  {operationHistory.length === 0 ? (
-                    <p className="text-xs text-muted-foreground py-4 text-center">
-                      No operations yet
-                    </p>
-                  ) : (
-                    operationHistory.map((op, i) => (
-                      <div
-                        key={op.id}
-                        className={cn(
-                          'text-xs p-2 rounded flex flex-col gap-0.5',
-                          i === historyIndex
-                            ? 'bg-primary/10 text-primary'
-                            : 'hover:bg-muted text-muted-foreground',
-                        )}
-                      >
-                        <span className="font-medium">
-                          {i === historyIndex && 'Current: '}
-                          {Object.keys(op.before || {}).length > 0
-                            ? 'Schema Update'
-                            : 'Operation'}
+                  <div className="flex items-center gap-0.5">
+                    {/* New Chat */}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={handleNewThread}
+                        >
+                          <Plus className="size-4 text-muted-foreground" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        New Chat{' '}
+                        <span className="text-muted-foreground ml-1 text-xs">
+                          ⌘N
                         </span>
-                        <span className="text-[10px] opacity-70">
-                          {new Date(op.timestamp).toLocaleTimeString()}
-                        </span>
-                      </div>
-                    ))
-                  )}
+                      </TooltipContent>
+                    </Tooltip>
+
+                    {/* History Button */}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => setShowHistory(true)}
+                        >
+                          <History className="size-4 text-muted-foreground" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Chat History</TooltipContent>
+                    </Tooltip>
+
+                    {/* Undo/Redo */}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={handleUndo}
+                          disabled={!canUndo}
+                        >
+                          <Undo2 className="size-4 text-muted-foreground" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Undo</TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={handleRedo}
+                          disabled={!canRedo}
+                        >
+                          <Redo2 className="size-4 text-muted-foreground" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Redo</TooltipContent>
+                    </Tooltip>
+
+                    <div className="w-px h-4 bg-border mx-1" />
+
+                    {/* Close */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      <X className="size-4" />
+                    </Button>
+                  </div>
                 </div>
-              </PopoverContent>
-            </Popover>
 
-            <div className="w-px h-4 bg-border mx-1" />
-
-            {/* Close */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => setIsOpen(false)}
-            >
-              <X className="size-4" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Assistant UI Thread */}
-        <div className="flex-1 overflow-hidden bg-background">
-          <AssistantRuntimeProvider runtime={runtime}>
-            <Thread
-              models={allModels}
-              currentModel={currentModel}
-              onModelChange={handleModelChange}
-            />
-          </AssistantRuntimeProvider>
-        </div>
-      </TooltipProvider>
+                {/* Assistant UI Thread */}
+                <div className="flex-1 overflow-hidden bg-background">
+                  <Thread
+                    models={allModels}
+                    currentModel={currentModel}
+                    onModelChange={handleModelChange}
+                  />
+                </div>
+              </>
+            )}
+          </TooltipProvider>
+        </MessageTracker>
+      </AssistantRuntimeProvider>
     </div>
   );
 }
