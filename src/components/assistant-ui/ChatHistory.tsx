@@ -14,12 +14,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Search,
-  Trash2,
-  ArrowLeft,
-  Plus,
-} from 'lucide-react';
+import { Search, Trash2, ArrowLeft, Plus } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,12 +37,7 @@ interface ThreadItemProps {
   onDelete: (id: string) => void;
 }
 
-function ThreadItem({
-  thread,
-  isActive,
-  onSelect,
-  onDelete,
-}: ThreadItemProps) {
+function ThreadItem({ thread, isActive, onSelect, onDelete }: ThreadItemProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   const timeAgo = useMemo(() => {
@@ -189,7 +179,8 @@ export function ChatHistory({
   const [showViewAll, setShowViewAll] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [threadToDelete, setThreadToDelete] = useState<string | null>(null);
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isDeleteAllAlertOpen, setIsDeleteAllAlertOpen] = useState(false);
 
   // Group threads by time
   const groupedThreads = useMemo(
@@ -283,9 +274,7 @@ export function ChatHistory({
           <div className="px-2 py-2 space-y-4">
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
-                <div className="text-sm text-muted-foreground">
-                  Loading...
-                </div>
+                <div className="text-sm text-muted-foreground">Loading...</div>
               </div>
             ) : threads.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
@@ -400,14 +389,7 @@ export function ChatHistory({
             <Button
               variant="ghost"
               className="w-full justify-center text-sm h-9 hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => {
-                const confirmed = window.confirm(
-                  'Are you sure you want to delete all conversations? This cannot be undone.',
-                );
-                if (confirmed) {
-                  onClearHistory();
-                }
-              }}
+              onClick={() => setIsDeleteAllAlertOpen(true)}
             >
               <Trash2 className="h-4 w-4 mr-2" />
               Delete All History
@@ -433,6 +415,34 @@ export function ChatHistory({
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete All Confirmation Dialog */}
+      <AlertDialog
+        open={isDeleteAllAlertOpen}
+        onOpenChange={setIsDeleteAllAlertOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete All History?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete all chat threads and their messages.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                onClearHistory();
+                setIsDeleteAllAlertOpen(false);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete All
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
