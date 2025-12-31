@@ -38,11 +38,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 
 // ** import assistant-ui components
 import { Thread } from '@/components/assistant-ui/thread';
@@ -372,6 +367,7 @@ export function AssistantSidebar({
   setMessagesRef.current = chat.setMessages;
 
   // Create runtime using useAISDKRuntime with direct useChat access
+  // @ts-ignore
   const runtime = useAISDKRuntime(chat);
 
   // Handle message updates from the Thread
@@ -647,11 +643,6 @@ export function AssistantSidebar({
     setHistoryIndex((prev) => prev + 1);
     toast.info('Redo', { description: 'Reapplied operation' });
   }, [canRedo, historyIndex, operationHistory, tables, updateTablesFromAI]);
-
-  const clearHistory = useCallback(() => {
-    setOperationHistory([]);
-    setHistoryIndex(-1);
-  }, []);
 
   return (
     <div
