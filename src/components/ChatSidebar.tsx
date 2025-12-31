@@ -83,6 +83,7 @@ import {
 } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MarkdownText } from '@/components/ui/markdown-text';
+import { Reasoning } from '@/components/assistant-ui/reasoning';
 
 // Helper to transform JSON-like responses from Gemini 3 to natural language
 // Gemini 3 preview often outputs JSON arrays despite system prompt instructions
@@ -453,6 +454,11 @@ export function ChatSidebar({
         name: 'Gemini 1.5 Flash',
         enabled: true,
       });
+      models.push({
+        id: 'gemini-2.0-flash-thinking-exp-01-21',
+        name: 'Gemini 2.0 Flash Thinking',
+        enabled: true,
+      });
     }
     return models;
   }, [googleModels, customGoogleModels]);
@@ -617,11 +623,19 @@ export function ChatSidebar({
     onFinish: ({ message }) => {
       // Clear streaming progress when finished
       setStreamingProgress(null);
+      // Debug: Log all part types for reasoning debugging
+      const reasoningParts = message.parts.filter(
+        (p: any) => p.type === 'reasoning',
+      );
       console.log('[onFinish] Processing message:', {
         id: message.id,
         role: message.role,
         partCount: message.parts.length,
         partTypes: message.parts.map((p: any) => p.type),
+        reasoningPartsCount: reasoningParts.length,
+        reasoningTexts: reasoningParts.map((p: any) =>
+          p.text?.substring(0, 100),
+        ),
       });
 
       let toolsExecuted = 0;
@@ -1200,6 +1214,63 @@ export function ChatSidebar({
                             <div className="text-xs font-medium text-muted-foreground mb-1">
                               Assistant
                             </div>
+
+                            {/* Render reasoning parts first */}
+                            {message.parts.some(
+                              (p: any) => p.type === 'reasoning',
+                            ) && (
+                              <div className="space-y-2">
+                                {message.parts
+                                  .filter((p: any) => {
+                                    if (p.type === 'reasoning') {
+                                      console.log(
+                                        '[Reasoning] Found reasoning part:',
+                                        {
+                                          text: p.text,
+                                          hasText: !!p.text,
+                                        },
+                                      );
+                                    }
+                                    return p.type === 'reasoning';
+                                  })
+                                  .map((part: any, partIndex: number) => {
+                                    // AI SDK reasoning parts have `text` property
+                                    const reasoningText = part.text || '';
+                                    // Check if this is the last message and still streaming
+                                    const isLastMessage =
+                                      index === messages.length - 1;
+                                    const isCurrentlyStreaming =
+                                      isLastMessage &&
+                                      status === 'streaming' &&
+                                      !reasoningText;
+
+                                    return (
+                                      <Reasoning
+                                        key={`reasoning-${partIndex}`}
+                                        text={reasoningText}
+                                        status={
+                                          isCurrentlyStreaming
+                                            ? { type: 'running' }
+                                            : undefined
+                                        }
+                                      />
+                                    );
+                                  })}
+                              </div>
+                            )}
+
+                            {/* Show thinking indicator while streaming if no reasoning parts yet */}
+                            {index === messages.length - 1 &&
+                              status === 'streaming' &&
+                              !message.parts.some(
+                                (p: any) =>
+                                  p.type === 'reasoning' || p.type === 'text',
+                              ) && (
+                                <Reasoning
+                                  text=""
+                                  status={{ type: 'running' }}
+                                />
+                              )}
 
                             {/* Render text parts with Markdown */}
                             {message.parts.filter((p: any) => p.type === 'text')

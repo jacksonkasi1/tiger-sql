@@ -490,12 +490,15 @@ src/
 ## 📋 Implementation Checklist
 
 ### Phase 1: Reasoning (Week 1)
-- [ ] Enable `sendReasoning: true` in backend
-- [ ] Create `reasoning.tsx` component
-- [ ] Create `ReasoningGroup` for consecutive reasoning
-- [ ] Integrate into ChatSidebar message rendering
-- [ ] Add shimmer/pulse animation while streaming
+- [x] Enable `sendReasoning: true` in backend
+- [x] Create `reasoning.tsx` component
+- [x] Create `ReasoningGroup` for consecutive reasoning
+- [x] Integrate into ChatSidebar message rendering
+- [x] Add shimmer/pulse animation while streaming
 - [ ] Test with different AI providers (OpenAI, Gemini)
+- [x] Typecheck passed
+- [x] Lint check passed
+- [x] Build check passed
 
 ### Phase 2: Tool I/O (Week 2)
 - [ ] Refactor ToolResult into separate file

@@ -1,22 +1,16 @@
 import {
-  ToolLoopAgent,
+  streamText,
   stepCountIs,
   tool,
   convertToModelMessages,
   createUIMessageStream,
   createUIMessageStreamResponse,
 } from 'ai';
+import type { ProviderOptions } from '@ai-sdk/provider-utils';
 import { openai, createOpenAI } from '@ai-sdk/openai';
 import { google, createGoogleGenerativeAI } from '@ai-sdk/google';
 import { z } from 'zod';
-import type {
-  Column,
-  Table,
-  TableState,
-  StreamingProgress,
-  StreamingTablesBatch,
-  StreamingNotification,
-} from '@/lib/types';
+import type { Column, Table, TableState } from '@/lib/types';
 import {
   initializeMCP,
   getMCPToolsForRequest,
@@ -24,19 +18,19 @@ import {
   isMCPAvailable,
 } from '@/lib/mcp';
 
-// Type for our custom streaming data parts
-type CustomDataPart =
-  | { type: 'data-progress'; data: StreamingProgress; transient?: boolean }
-  | { type: 'data-tables-batch'; data: StreamingTablesBatch; id?: string }
-  | {
-      type: 'data-notification';
-      data: StreamingNotification;
-      transient?: boolean;
-    }
-  | {
-      type: 'data-operation-history';
-      data: { operations: OperationRecord[]; canUndo: boolean };
-    };
+// Type for our custom streaming data parts (kept for future use)
+// type CustomDataPart =
+//   | { type: 'data-progress'; data: StreamingProgress; transient?: boolean }
+//   | { type: 'data-tables-batch'; data: StreamingTablesBatch; id?: string }
+//   | {
+//       type: 'data-notification';
+//       data: StreamingNotification;
+//       transient?: boolean;
+//     }
+//   | {
+//       type: 'data-operation-history';
+//       data: { operations: OperationRecord[]; canUndo: boolean };
+//     };
 
 // Operation history for undo/redo support (Phase 5.2)
 export interface OperationRecord {
@@ -153,8 +147,8 @@ const renameTableParams = z.object({
 });
 
 const addColumnParams = z.object({
-  tableId: z.string().min(1).describe('The table to add column to'),
   column: columnInputSchema.describe('Column definition'),
+  tableId: z.string().min(1).describe('The table to add column to'),
 });
 
 const dropColumnParams = z.object({
@@ -363,11 +357,46 @@ export async function POST(req: Request) {
       (body.model as string | undefined) ||
       (providerKey === 'google' ? 'models/gemini-2.5-flash' : 'gpt-4o-mini');
 
+    console.log('[api/chat] Model:', modelName);
+
     let model;
+    let providerOptions: ProviderOptions | undefined;
 
     if (providerKey === 'google') {
       const provider = apiKey ? createGoogleGenerativeAI({ apiKey }) : google;
       model = provider(modelName);
+
+      // Configure thinking/reasoning for Gemini models
+      // Gemini 3 models use thinkingLevel, Gemini 2.5 models use thinkingBudget
+      const isGemini3 = modelName.includes('gemini-3');
+      const isGemini25 =
+        modelName.includes('gemini-2.5') || modelName.includes('gemini-2-5');
+
+      if (isGemini3) {
+        providerOptions = {
+          google: {
+            thinkingConfig: {
+              thinkingLevel: 'low', // 'low' or 'high' for Gemini 3 Pro
+              includeThoughts: true,
+            },
+          },
+        };
+        console.log(
+          '[api/chat] Gemini 3 thinking enabled with thinkingLevel: low',
+        );
+      } else if (isGemini25) {
+        providerOptions = {
+          google: {
+            thinkingConfig: {
+              thinkingBudget: 4096, // Token budget for thinking
+              includeThoughts: true,
+            },
+          },
+        };
+        console.log(
+          '[api/chat] Gemini 2.5 thinking enabled with thinkingBudget: 4096',
+        );
+      }
     } else {
       const provider = apiKey ? createOpenAI({ apiKey }) : openai;
       model = provider(modelName);
@@ -1064,7 +1093,33 @@ export async function POST(req: Request) {
     // Convert UIMessages to ModelMessages
     const modelMessages = await convertToModelMessages(messages);
 
-    // Create a custom UI message stream with streaming data parts support
+    // Detect if request requires tool execution (for toolChoice)
+    const requiresTools =
+      /create|delete|drop|add|modify|remove|rename|build|make|generate|design/i.test(
+        typeof userMessage === 'string' ? userMessage : '',
+      );
+
+    // Get maxSteps from request (user-configurable, default 50)
+    const maxAgentSteps = body.maxSteps ?? 50;
+
+    // Determine toolChoice based on provider:
+    // - OpenAI: use 'required' for schema operations to force tool execution
+    // - Gemini: use 'auto' always (Gemini outputs weird text like '[]' with 'required')
+    const isGemini = providerKey === 'google';
+    const toolChoiceSetting = isGemini
+      ? 'auto' // Gemini works better with 'auto'
+      : requiresTools
+        ? 'required'
+        : 'auto';
+
+    console.log('[api/chat] Starting streamText with:', {
+      provider: providerKey,
+      model: modelName,
+      toolChoice: toolChoiceSetting,
+      maxSteps: maxAgentSteps,
+    });
+
+    // Use createUIMessageStream to support custom data parts for schema updates
     const stream = createUIMessageStream({
       execute: async ({ writer }) => {
         // Send initial notification
@@ -1075,37 +1130,17 @@ export async function POST(req: Request) {
             level: 'info',
           },
           transient: true,
-        } as CustomDataPart);
+        });
 
-        // Detect if request requires tool execution (for toolChoice)
-        const userMessage = messages[messages.length - 1]?.content || '';
-        const requiresTools =
-          /create|delete|drop|add|modify|remove|rename|build|make|generate|design/i.test(
-            typeof userMessage === 'string' ? userMessage : '',
-          );
-
-        // Get maxSteps from request (user-configurable, default 50)
-        const maxAgentSteps = body.maxSteps ?? 50;
-
-        // Determine toolChoice based on provider:
-        // - OpenAI: use 'required' for schema operations to force tool execution
-        // - Gemini: use 'auto' always (Gemini outputs weird text like '[]' with 'required')
-        const isGemini = providerKey === 'google';
-        const toolChoiceSetting = isGemini
-          ? 'auto' // Gemini works better with 'auto'
-          : requiresTools
-            ? 'required'
-            : 'auto';
-
-        // Create the ToolLoopAgent (AI SDK 6)
-        const agent = new ToolLoopAgent({
+        const result = streamText({
           model,
-          instructions: SYSTEM_PROMPT,
+          system: SYSTEM_PROMPT,
+          messages: modelMessages,
           tools,
-          // User-configurable max steps for multi-step tool calling
-          stopWhen: stepCountIs(maxAgentSteps),
-          // Provider-specific tool choice
           toolChoice: toolChoiceSetting,
+          stopWhen: stepCountIs(maxAgentSteps),
+          providerOptions,
+          abortSignal: abortController.signal,
           onStepFinish: ({ toolCalls, toolResults, text, finishReason }) => {
             console.log(
               `[Step] Tool calls: ${toolCalls?.length || 0}, ` +
@@ -1119,78 +1154,100 @@ export async function POST(req: Request) {
                 console.log(`  Tool ${i + 1}: ${call.toolName}`);
               });
             }
+
+            // Track operation count for final notification
+            if (toolResults && toolResults.length > 0) {
+              operationCount += toolResults.length;
+            }
+
+            // Send schema state update after each step with tool results
+            if (toolResults && toolResults.length > 0) {
+              writer.write({
+                type: 'data-tables-batch',
+                data: {
+                  tables: cloneTables(schemaState),
+                  isComplete: false,
+                },
+              });
+            }
+          },
+          onFinish: async () => {
+            // Log final state
+            const tableCount = Object.keys(schemaState).length;
+            console.log(
+              `[api/chat] Finished: ${operationCount} operations, ${tableCount} tables`,
+            );
+
+            // Send final schema state
+            writer.write({
+              type: 'data-tables-batch',
+              data: {
+                tables: cloneTables(schemaState),
+                isComplete: true,
+              },
+            });
+
+            // Send operation history for undo/redo
+            if (operationHistory.length > 0) {
+              writer.write({
+                type: 'data-operation-history',
+                data: {
+                  operations: operationHistory,
+                  canUndo: operationHistory.length > 0,
+                },
+              });
+            }
+
+            // Send completion notification
+            writer.write({
+              type: 'data-notification',
+              data: {
+                message: `Completed ${operationCount} operations on ${tableCount} tables`,
+                level: 'success',
+              },
+              transient: true,
+            });
+          },
+          onError: (error: unknown) => {
+            console.error('[api/chat] streamText error:', error);
           },
         });
 
-        // Stream the agent response
-        const result = await agent.stream({
-          messages: modelMessages,
-          abortSignal: abortController.signal,
-        });
-
-        // Merge the result stream into our custom stream
+        // Merge the streamText result into our custom stream
         writer.merge(
           result.toUIMessageStream({
+            sendReasoning: true,
             sendSources: false,
-            sendReasoning: false,
             onError: (error: unknown) => {
-              console.error('[Agent error]', error);
+              console.error('[Stream error]', error);
               return error instanceof Error ? error.message : String(error);
             },
           }),
         );
 
-        // Wait for the stream to complete (no periodic updates - only final)
+        // Wait for the stream to complete
         try {
-          await result.text; // text is a promise that resolves when streaming completes
+          await result.text;
         } catch (error: unknown) {
-          if (abortController.signal.aborted) {
-            console.log('[api/chat] Stream was cancelled');
+          if (
+            error instanceof Error &&
+            (error.name === 'AbortError' || error.message.includes('aborted'))
+          ) {
+            console.log('[api/chat] Stream aborted by client');
           } else {
-            throw error;
-          }
-        }
-
-        // Send final state
-        const tableCount = Object.keys(schemaState).length;
-
-        if (operationCount > 0) {
-          // Send final tables state
-          writer.write({
-            type: 'data-tables-batch',
-            id: 'tables-final',
-            data: {
-              tables: cloneTables(schemaState),
-              batchNumber: operationCount + 1,
-              isComplete: true,
-            },
-          } as CustomDataPart);
-
-          // Send completion notification
-          writer.write({
-            type: 'data-notification',
-            data: {
-              message: `Completed ${operationCount} operation${operationCount === 1 ? '' : 's'}. ${tableCount} table${tableCount === 1 ? '' : 's'} in workspace.`,
-              level: 'success',
-            },
-            transient: true,
-          } as CustomDataPart);
-
-          // Send operation history for undo/redo support (Phase 5.2)
-          if (operationHistory.length > 0) {
-            writer.write({
-              type: 'data-operation-history',
-              data: {
-                operations: operationHistory,
-                canUndo: operationHistory.length > 0,
-              },
-            } as CustomDataPart);
+            console.error('[api/chat] Stream error:', error);
           }
         }
       },
     });
 
-    return createUIMessageStreamResponse({ stream });
+    // Return the custom stream response
+    return createUIMessageStreamResponse({
+      stream,
+      headers: {
+        'Cache-Control': 'no-cache, no-transform',
+      },
+    });
   } catch (error) {
     console.error('[api/chat] unexpected error:', error);
     const message =

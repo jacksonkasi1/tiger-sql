@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useStore } from '@/lib/store';
 import { Helper } from '@/components/Helper';
-import { ChatSidebar } from '@/components/ChatSidebar';
+import { AssistantSidebar } from '@/components/AssistantSidebar';
 import { FlowCanvas } from '@/components/flow/FlowCanvas';
 import { ImportSQL } from '@/components/ImportSQL';
 import { SearchBar } from '@/components/SearchBar';
@@ -152,7 +152,7 @@ export default function HomePage() {
         <FlowCanvas />
       </div>
       <SchemaSidebar />
-      <ChatSidebar isOpen={isChatOpen} onOpenChange={setIsChatOpen} />
+      <AssistantSidebar isOpen={isChatOpen} onOpenChange={setIsChatOpen} />
       <ImportSQL open={isImportOpen} onClose={() => setIsImportOpen(false)} />
     </div>
   );
