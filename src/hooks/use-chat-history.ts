@@ -131,7 +131,7 @@ export function useChatHistory(): UseChatHistoryReturn {
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Debounce save to avoid excessive writes
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Track the last saved message count per thread to prevent duplicate saves
   const lastSavedStateRef = useRef<{

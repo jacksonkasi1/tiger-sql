@@ -337,7 +337,7 @@ src/
 - Implement storage quota monitoring
 
 ### Fallback Strategy
-If IndexedDB unavailable:
+If IndexedDB is unavailable:
 1. Warn user (toast notification)
 2. Fall back to sessionStorage (temporary)
 3. Disable history features gracefully
