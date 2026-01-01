@@ -1,11 +1,13 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
+<div align="center">
   <a href="https://github.com/jacksonkasi1/tiger-sql">
-    <img src="src/assets/logo.svg" alt="Logo" width="80" height="80">
+    <img src="https://tiger-sql.vercel.app/logo.svg" alt="Logo" width="80" height="80">
   </a>
+</div>
 
-  <h1 align="center">Tiger SQL</h1>
+<h1 align="center" >Tiger SQL</h1>
 
   <p align="center">
     <strong>PostgreSQL Schema Visualizer & Designer with AI-Powered Assistance</strong>
@@ -24,6 +26,9 @@
   </p>
 
   <p align="center">
+    <a href="https://github.com/sponsors/jacksonkasi1">
+      <img src="https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-pink?style=social&logo=github" alt="Sponsor">
+    </a>
     <a href="https://github.com/jacksonkasi1/tiger-sql/stargazers">
       <img src="https://img.shields.io/github/stars/jacksonkasi1/tiger-sql?style=social" alt="Stars">
     </a>
@@ -57,16 +62,17 @@ Tiger SQL now features a **scalable, multi-server MCP architecture** that provid
 
 Tiger SQL comes with **[pg-aiguide](https://github.com/timescale/pg-aiguide)** pre-integrated - an AI-optimized PostgreSQL knowledge base created by [Timescale](https://www.timescale.com/). This MCP server provides:
 
-| Tool | Description |
-|------|-------------|
-| `pg_view_skill` | Get curated PostgreSQL best practices on specific topics |
-| `pg_list_skills` | Browse all available PostgreSQL knowledge topics |
+| Tool                               | Description                                              |
+| ---------------------------------- | -------------------------------------------------------- |
+| `pg_view_skill`                    | Get curated PostgreSQL best practices on specific topics |
+| `pg_list_skills`                   | Browse all available PostgreSQL knowledge topics         |
 | `pg_semantic_search_postgres_docs` | Semantic search across official PostgreSQL documentation |
 
 > **No setup required!** pg-aiguide works out of the box. The AI assistant automatically uses it when you ask about PostgreSQL best practices, optimization, or schema design patterns.
 
 **User Controls:**
 Users can control MCP behavior with special commands:
+
 - `[use-mcp]` - Force MCP usage for this request
 - `[skip-mcp]` - Skip MCP, use direct execution
 - `[mcp-verbose]` - Show detailed MCP queries
@@ -78,6 +84,7 @@ Learn more about MCP: [Vercel AI SDK MCP Documentation](https://ai-sdk.dev/docs/
 ## ✨ Features
 
 ### 🎨 **Visual Schema Designer**
+
 - 🖱️ **Drag & Drop Interface** - Create and connect tables effortlessly
 - 🔄 **Undo/Redo Support** - Full history management with keyboard shortcuts (Cmd/Ctrl+Z)
 - 🎯 **Smart Auto-Layout** - Automatic table arrangement using Dagre algorithm
@@ -86,6 +93,7 @@ Learn more about MCP: [Vercel AI SDK MCP Documentation](https://ai-sdk.dev/docs/
 - 🔍 **Zoom & Pan** - Smooth navigation with minimap support
 
 ### 🤖 **AI-Powered Assistant (Enhanced with MCP)**
+
 - 💬 **Interactive Chat** - AI assistant to help with schema design
 - 🧠 **Smart Suggestions** - Get recommendations powered by PostgreSQL best practices via MCP
 - 📝 **Context-Aware** - Understands your current schema state and uses up-to-date PostgreSQL knowledge
@@ -98,12 +106,14 @@ Learn more about MCP: [Vercel AI SDK MCP Documentation](https://ai-sdk.dev/docs/
 Create relationships between tables by dragging from one column to another. Choose between two validation modes:
 
 #### 🔓 **Flexible Mode** (Unlock Icon)
+
 - Connect **any column to any column** without type restrictions
 - Perfect for quick prototyping and sketching
 - Ideal for custom types or extensions
 - Maximum flexibility in schema design
 
 #### 🔐 **Strict Mode** (Lock Icon)
+
 - Only allows connections between **type-compatible columns**
 - Validates PostgreSQL data type compatibility
 - Prevents invalid relationships
@@ -111,33 +121,36 @@ Create relationships between tables by dragging from one column to another. Choo
 
 ##### Type Compatibility Groups
 
-| Category | Compatible Types |
-|----------|------------------|
-| **UUID** | `uuid` |
-| **Integer** | `integer`, `int`, `int2`, `int4`, `int8`, `smallint`, `bigint`, `serial`, `smallserial`, `bigserial` |
-| **Numeric** | `numeric`, `decimal` |
-| **Float** | `real`, `float4`, `double precision`, `float8` |
-| **String** | `text`, `varchar`, `char`, `character`, `character varying` |
-| **Boolean** | `boolean`, `bool` |
-| **Date** | `date` |
-| **Time** | `time`, `timetz` |
-| **Timestamp** | `timestamp`, `timestamptz` |
-| **JSON** | `json`, `jsonb` |
-| **Binary** | `bytea` |
+| Category      | Compatible Types                                                                                     |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| **UUID**      | `uuid`                                                                                               |
+| **Integer**   | `integer`, `int`, `int2`, `int4`, `int8`, `smallint`, `bigint`, `serial`, `smallserial`, `bigserial` |
+| **Numeric**   | `numeric`, `decimal`                                                                                 |
+| **Float**     | `real`, `float4`, `double precision`, `float8`                                                       |
+| **String**    | `text`, `varchar`, `char`, `character`, `character varying`                                          |
+| **Boolean**   | `boolean`, `bool`                                                                                    |
+| **Date**      | `date`                                                                                               |
+| **Time**      | `time`, `timetz`                                                                                     |
+| **Timestamp** | `timestamp`, `timestamptz`                                                                           |
+| **JSON**      | `json`, `jsonb`                                                                                      |
+| **Binary**    | `bytea`                                                                                              |
 
 ### 💾 **Data Management**
+
 - 📦 **Import SQL** - Load existing schemas from SQL files
 - 💿 **Export SQL** - Generate SQL DDL for your schema
 - 🔄 **LocalStorage Persistence** - Your work is automatically saved
 - 🚪 **No Login Required** - Start designing immediately
 
 ### 🛡️ **Security & Privacy**
+
 - 🔒 **Client-Side Only** - All processing happens in your browser
 - 👀 **No Sensitive Data** - Only uses public API keys
 - 🔐 **No Database Passwords** - Secure by design
 - 🚫 **No Server Storage** - Your data stays on your device
 
 ### 🎮 **User Experience**
+
 - ⚡ **Lightning Fast** - Built with modern React and Next.js
 - 🎨 **Beautiful UI** - Powered by Tailwind CSS and shadcn/ui
 - 📱 **Responsive Design** - Works on all screen sizes
@@ -189,33 +202,39 @@ Tiger SQL is built with modern, cutting-edge technologies:
 ### Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/jacksonkasi1/tiger-sql.git
    cd tiger-sql
    ```
 
 2. **Install dependencies**
+
    ```bash
    bun install
    ```
 
 3. **Set up environment variables** (Optional - for AI features)
+
    ```bash
    cp .env.example .env.local
    ```
-   
+
    Add your API keys:
+
    ```env
    OPENAI_API_KEY=your_openai_key_here
    GOOGLE_GENERATIVE_AI_API_KEY=your_google_ai_key_here
    ```
 
 4. **Configure MCP Servers** (Optional - for custom MCP servers)
+
    ```bash
    cp .mcp-config.example.json .mcp-config.json
    ```
-   
+
    The built-in pg-aiguide MCP server works out of the box. Add custom servers in `.mcp-config.json`:
+
    ```json
    {
      "version": "1.0.0",
@@ -237,12 +256,13 @@ Tiger SQL is built with modern, cutting-edge technologies:
    ```
 
 5. **Run the development server**
+
    ```bash
    bun dev
    ```
 
 6. **Open your browser**
-   
+
    Navigate to [http://localhost:3000](http://localhost:3000)
 
 ### Available Scripts
@@ -272,8 +292,9 @@ Tiger SQL features a **scalable, configuration-driven MCP architecture** designe
 ### Adding Custom MCP Servers
 
 1. **Via Configuration File** (Recommended)
-   
+
    Create `.mcp-config.json` in the project root:
+
    ```json
    {
      "version": "1.0.0",
@@ -295,8 +316,9 @@ Tiger SQL features a **scalable, configuration-driven MCP architecture** designe
    ```
 
 2. **Via Code** (For Built-in Servers)
-   
+
    Edit `src/lib/mcp/config.ts` and add to `BUILTIN_MCP_SERVERS`:
+
    ```typescript
    {
      id: 'my-builtin-mcp',
@@ -313,8 +335,9 @@ Tiger SQL features a **scalable, configuration-driven MCP architecture** designe
    ```
 
 3. **Environment Variables**
-   
+
    Override defaults:
+
    ```env
    MCP_CONFIG_PATH=./custom-mcp-config.json
    MCP_DISABLE_BUILTIN=false
@@ -414,14 +437,6 @@ If you find Tiger SQL helpful, consider supporting its development:
 <div align="center">
   <a href="https://github.com/sponsors/jacksonkasi1">
     <img src="https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-pink?style=for-the-badge&logo=github" alt="GitHub Sponsors">
-  </a>
-</div>
-
-<br />
-
-<div align="center">
-  <a href="https://github.com/sponsors/jacksonkasi1">
-    <img src="https://github.com/sponsors/jacksonkasi1/card" title="Sponsor jacksonkasi1" height="225" width="600" style="border: 0;">
   </a>
 </div>
 
