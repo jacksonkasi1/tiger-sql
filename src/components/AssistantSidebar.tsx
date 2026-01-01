@@ -27,6 +27,8 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { useChatHistory } from '@/hooks/use-chat-history';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useResizable } from '@/hooks/useResizable';
+import { ResizeHandle } from '@/components/ui/resize-handle';
 
 // ** import ui components
 import { Button } from '@/components/ui/button';
@@ -66,9 +68,16 @@ function MessageTracker({ onMessagesChange, children }: MessageTrackerProps) {
 }
 
 interface AssistantSidebarProps {
-  isOpen?: boolean;
-  onOpenChange?: (open: boolean) => void;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
 }
+
+const SIDEBAR_CONFIG = {
+  storageKey: 'assistant-sidebar-width',
+  defaultWidth: 400,
+  minWidth: 320,
+  maxWidth: 700,
+} as const;
 
 interface Model {
   id: string;
@@ -87,6 +96,15 @@ export function AssistantSidebar({
   onOpenChange,
 }: AssistantSidebarProps) {
   const { tables, updateTablesFromAI } = useStore();
+
+  // Resizable sidebar
+  const { width, isResizing, handleMouseDown, resetWidth } = useResizable({
+    storageKey: SIDEBAR_CONFIG.storageKey,
+    defaultWidth: SIDEBAR_CONFIG.defaultWidth,
+    minWidth: SIDEBAR_CONFIG.minWidth,
+    maxWidth: SIDEBAR_CONFIG.maxWidth,
+    side: 'right',
+  });
   const [aiProvider, setAiProvider] = useLocalStorage<'openai' | 'google'>(
     'ai-provider',
     'openai',
@@ -683,10 +701,18 @@ export function AssistantSidebar({
   return (
     <div
       className={cn(
-        'fixed inset-y-0 right-0 z-[60] w-[400px] min-w-[320px] max-w-[90vw] bg-background border-l shadow-2xl flex flex-col sm:max-w-[50vw] transition-transform duration-300',
+        'fixed inset-y-0 right-0 z-[60] bg-background border-l shadow-2xl flex flex-col transition-transform duration-300',
         isOpen ? 'translate-x-0' : 'translate-x-full',
       )}
+      style={{ width: `${width}px` }}
     >
+      {/* Resize Handle */}
+      <ResizeHandle
+        side="left"
+        isResizing={isResizing}
+        onMouseDown={handleMouseDown}
+        onDoubleClick={resetWidth}
+      />
       <AssistantRuntimeProvider runtime={runtime}>
         <MessageTracker onMessagesChange={handleMessagesChange}>
           <TooltipProvider>

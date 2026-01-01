@@ -6,9 +6,26 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TableList } from './TableList';
 import { SchemaSidebarSql } from './SchemaSidebarSql';
+import { useResizable } from '@/hooks/useResizable';
+import { ResizeHandle } from '@/components/ui/resize-handle';
+
+const SIDEBAR_CONFIG = {
+  storageKey: 'schema-sidebar-width',
+  defaultWidth: 450,
+  minWidth: 320,
+  maxWidth: 700,
+} as const;
 
 export function SchemaSidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const { width, isResizing, handleMouseDown, resetWidth } = useResizable({
+    storageKey: SIDEBAR_CONFIG.storageKey,
+    defaultWidth: SIDEBAR_CONFIG.defaultWidth,
+    minWidth: SIDEBAR_CONFIG.minWidth,
+    maxWidth: SIDEBAR_CONFIG.maxWidth,
+    side: 'left',
+  });
 
   if (isCollapsed) {
     return (
@@ -27,7 +44,10 @@ export function SchemaSidebar() {
   }
 
   return (
-    <div className="pointer-events-auto absolute left-0 top-0 z-40 h-full w-[450px] bg-background/95 backdrop-blur border-r border-border/50 flex flex-col shadow-xl">
+    <div
+      className="pointer-events-auto absolute left-0 top-0 z-40 h-full bg-background/95 backdrop-blur border-r border-border/50 flex flex-col shadow-xl"
+      style={{ width: `${width}px` }}
+    >
       {/* Header */}
       <div className="px-4 py-2.5 border-b border-border/30 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-foreground">Schema Editor</h2>
@@ -63,6 +83,14 @@ export function SchemaSidebar() {
           <SchemaSidebarSql />
         </TabsContent>
       </Tabs>
+
+      {/* Resize Handle */}
+      <ResizeHandle
+        side="right"
+        isResizing={isResizing}
+        onMouseDown={handleMouseDown}
+        onDoubleClick={resetWidth}
+      />
     </div>
   );
 }
