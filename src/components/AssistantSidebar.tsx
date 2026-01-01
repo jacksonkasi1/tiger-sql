@@ -310,69 +310,35 @@ export function AssistantSidebar({
 
         const stream = new ReadableStream({
           async start(controller) {
+            const dispatchDataParts = (payload: any) => {
+              const items = Array.isArray(payload) ? payload : [payload];
+              for (const item of items) {
+                if (item && typeof item === 'object' && 'type' in item) {
+                  const partType = item.type as string;
+                  if (partType.startsWith('data-')) {
+                    handleDataPartRef.current(partType, item.data);
+                  }
+                }
+              }
+            };
+
             const processLine = (line: string) => {
-              // Handle SSE format: "data: {...}"
-              if (line.startsWith('data: ')) {
-                try {
-                  const jsonStr = line.slice(6); // Remove "data: " prefix
-                  if (jsonStr === '[DONE]') return; // Skip SSE done marker
+              const trimmed = line.trim();
+              if (!trimmed) return;
 
-                  const parsed = JSON.parse(jsonStr);
-                  // Check if it's a data part with type field
-                  if (
-                    parsed &&
-                    typeof parsed === 'object' &&
-                    'type' in parsed
-                  ) {
-                    const partType = parsed.type as string;
-                    if (partType.startsWith('data-')) {
-                      handleDataPartRef.current(partType, parsed.data);
-                    }
-                  }
-                } catch {
-                  // Ignore parse errors for non-JSON data lines
-                }
+              let jsonStr = '';
+              if (trimmed.startsWith('data: ')) {
+                jsonStr = trimmed.slice(6);
+                if (jsonStr === '[DONE]') return;
+              } else if (trimmed.startsWith('2:') || trimmed.startsWith('g:')) {
+                jsonStr = trimmed.slice(2);
               }
-              // Handle standard AI SDK data protocol (prefix '2:')
-              else if (line.startsWith('2:')) {
-                try {
-                  const jsonStr = line.slice(2);
-                  const parsed = JSON.parse(jsonStr);
 
-                  if (Array.isArray(parsed)) {
-                    for (const item of parsed) {
-                      if (item && typeof item === 'object' && 'type' in item) {
-                        const partType = item.type as string;
-                        if (partType.startsWith('data-')) {
-                          handleDataPartRef.current(partType, item.data);
-                        }
-                      }
-                    }
-                  }
-                } catch {
-                  // Ignore parse errors
-                }
-              }
-              // Legacy check: g: prefix
-              else if (line.startsWith('g:')) {
+              if (jsonStr) {
                 try {
-                  // Parse the JSON after "g:"
-                  const jsonStr = line.slice(2);
-                  const parsed = JSON.parse(jsonStr);
-
-                  // Check if it's a data part
-                  if (
-                    parsed &&
-                    typeof parsed === 'object' &&
-                    'type' in parsed
-                  ) {
-                    const partType = parsed.type as string;
-                    if (partType.startsWith('data-')) {
-                      handleDataPartRef.current(partType, parsed.data);
-                    }
-                  }
+                  dispatchDataParts(JSON.parse(jsonStr));
                 } catch {
-                  // Not valid JSON, skip
+                  // Skip invalid JSON
                 }
               }
             };

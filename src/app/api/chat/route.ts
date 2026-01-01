@@ -439,18 +439,26 @@ export async function POST(req: Request) {
       // If direct match, return it
       if (schemaState[idOrName]) return idOrName;
 
+      // Try case-insensitive match on keys
+      const lowercaseId = idOrName.toLowerCase();
+      const directKeyMatch = Object.keys(schemaState).find(
+        (k) => k.toLowerCase() === lowercaseId,
+      );
+      if (directKeyMatch) return directKeyMatch;
+
       // Try finding by title (case-insensitive)
       // Also handle schema.table format by checking the name part
       const cleanName = idOrName.includes('.')
         ? idOrName.split('.').pop()!
         : idOrName;
 
-      const foundEntry = Object.entries(schemaState).find(([_, table]) => {
+      const foundEntry = Object.entries(schemaState).find(([key, table]) => {
         return (
           table.title === idOrName ||
           table.title === cleanName ||
           table.title.toLowerCase() === idOrName.toLowerCase() ||
-          table.title.toLowerCase() === cleanName.toLowerCase()
+          table.title.toLowerCase() === cleanName.toLowerCase() ||
+          key.split('.').pop()?.toLowerCase() === cleanName.toLowerCase()
         );
       });
 
@@ -557,6 +565,8 @@ export async function POST(req: Request) {
           }
 
           const table = schemaState[resolvedId];
+          const userFacingTableName = table?.title ?? tableId;
+
           if (!table) {
             return {
               ok: false,
@@ -632,7 +642,10 @@ export async function POST(req: Request) {
             return { ok: false, message: 'Operation cancelled' };
           }
 
-          if (!schemaState[resolvedId]) {
+          const table = schemaState[resolvedId];
+          const userFacingTableName = table?.title ?? tableId;
+
+          if (!table) {
             return {
               ok: false,
               message: `Table '${tableId}' not found`,
@@ -640,7 +653,7 @@ export async function POST(req: Request) {
           }
 
           operationCount++;
-          const beforeState = cloneTable(schemaState[resolvedId]);
+          const beforeState = cloneTable(table);
 
           delete schemaState[resolvedId];
 
@@ -650,12 +663,12 @@ export async function POST(req: Request) {
             resolvedId,
             beforeState,
             null,
-            `Dropped table '${resolvedId}'`,
+            `Dropped table '${userFacingTableName}'`,
           );
 
           return {
             ok: true,
-            message: `Dropped table '${resolvedId}'`,
+            message: `Dropped table '${userFacingTableName}'`,
             remainingTables: Object.keys(schemaState).length,
           };
         },
@@ -773,6 +786,8 @@ export async function POST(req: Request) {
           }
 
           const table = schemaState[resolvedId];
+          const userFacingTableName = table?.title ?? tableId;
+
           if (!table) {
             return {
               ok: false,
@@ -789,7 +804,7 @@ export async function POST(req: Request) {
           if (existingColumns.some((c) => c.title === normalizedColumn.title)) {
             return {
               ok: false,
-              message: `Column '${normalizedColumn.title}' already exists in '${tableId}'`,
+              message: `Column '${normalizedColumn.title}' already exists in table '${userFacingTableName}'`,
             };
           }
 
@@ -801,12 +816,12 @@ export async function POST(req: Request) {
             resolvedId,
             beforeState,
             table,
-            `Added column '${normalizedColumn.title}' to table '${resolvedId}'`,
+            `Added column '${normalizedColumn.title}' to table '${userFacingTableName}'`,
           );
 
           return {
             ok: true,
-            message: `Added column '${normalizedColumn.title}' to '${tableId}'`,
+            message: `Added column '${normalizedColumn.title}' to table '${userFacingTableName}'`,
             column: normalizedColumn.title,
             tableColumnCount: table.columns.length,
           };
@@ -824,6 +839,8 @@ export async function POST(req: Request) {
           }
 
           const table = schemaState[resolvedId];
+          const userFacingTableName = table?.title ?? tableId;
+
           if (!table) {
             return {
               ok: false,
@@ -842,7 +859,7 @@ export async function POST(req: Request) {
           if (table.columns.length === originalLength) {
             return {
               ok: false,
-              message: `Column '${columnName}' not found in '${tableId}'`,
+              message: `Column '${columnName}' not found in table '${userFacingTableName}'`,
             };
           }
 
@@ -852,12 +869,12 @@ export async function POST(req: Request) {
             resolvedId,
             beforeState,
             table,
-            `Dropped column '${columnName}' from '${resolvedId}'`,
+            `Dropped column '${columnName}' from table '${userFacingTableName}'`,
           );
 
           return {
             ok: true,
-            message: `Dropped column '${columnName}' from '${tableId}'`,
+            message: `Dropped column '${columnName}' from table '${userFacingTableName}'`,
             tableColumnCount: table.columns.length,
           };
         },
@@ -875,6 +892,8 @@ export async function POST(req: Request) {
           }
 
           const table = schemaState[resolvedId];
+          const userFacingTableName = table?.title ?? tableId;
+
           if (!table) {
             return {
               ok: false,
@@ -892,7 +911,7 @@ export async function POST(req: Request) {
           if (columnIndex === -1) {
             return {
               ok: false,
-              message: `Column '${columnName}' not found in '${tableId}'`,
+              message: `Column '${columnName}' not found in table '${userFacingTableName}'`,
             };
           }
 
@@ -920,7 +939,7 @@ export async function POST(req: Request) {
             resolvedId,
             beforeState,
             table,
-            `Altered column '${columnName}' in '${resolvedId}'`,
+            `Altered column '${columnName}' in table '${userFacingTableName}'`,
           );
 
           const changedProps = Object.keys(patch).filter(
@@ -929,7 +948,7 @@ export async function POST(req: Request) {
 
           return {
             ok: true,
-            message: `Updated column '${columnName}' in '${tableId}'`,
+            message: `Updated column '${columnName}' in table '${userFacingTableName}'`,
             changes: changedProps,
           };
         },
@@ -953,6 +972,8 @@ export async function POST(req: Request) {
           }
 
           const table = schemaState[resolvedId];
+          const userFacingTableName = table?.title ?? tableId;
+
           if (!table) {
             return {
               ok: false,
@@ -967,7 +988,7 @@ export async function POST(req: Request) {
           if (columnIndex === -1) {
             return {
               ok: false,
-              message: `Column '${columnName}' not found in '${tableId}'`,
+              message: `Column '${columnName}' not found in table '${userFacingTableName}'`,
             };
           }
 
@@ -996,12 +1017,12 @@ export async function POST(req: Request) {
             resolvedId,
             beforeState,
             table,
-            `Set FK on '${resolvedId}.${columnName}' → '${fkValue}'`,
+            `Set FK on '${userFacingTableName}.${columnName}' → '${fkValue}'`,
           );
 
           return {
             ok: true,
-            message: `Set foreign key: ${tableId}.${columnName} → ${fkValue}`,
+            message: `Set foreign key: ${userFacingTableName}.${columnName} → ${fkValue}`,
             column: columnName,
             references: fkValue,
           };
@@ -1019,6 +1040,8 @@ export async function POST(req: Request) {
           }
 
           const table = schemaState[resolvedId];
+          const userFacingTableName = table?.title ?? tableId;
+
           if (!table) {
             return {
               ok: false,
@@ -1033,7 +1056,7 @@ export async function POST(req: Request) {
           if (columnIndex === -1) {
             return {
               ok: false,
-              message: `Column '${columnName}' not found in '${tableId}'`,
+              message: `Column '${columnName}' not found in table '${userFacingTableName}'`,
             };
           }
 
@@ -1056,15 +1079,15 @@ export async function POST(req: Request) {
           // Record operation for undo
           recordOperation(
             'alterColumn',
-            tableId,
+            resolvedId,
             beforeState,
             table,
-            `Removed FK from '${tableId}.${columnName}'`,
+            `Removed FK from '${userFacingTableName}.${columnName}'`,
           );
 
           return {
             ok: true,
-            message: `Removed foreign key from ${tableId}.${columnName} (was: ${currentFk})`,
+            message: `Removed foreign key from ${userFacingTableName}.${columnName} (was: ${currentFk})`,
             column: columnName,
             previousFk: currentFk,
           };
