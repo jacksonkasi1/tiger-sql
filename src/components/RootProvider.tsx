@@ -1,7 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useStore } from '@/lib/store';
+import {
+  useStore,
+  hasUserClearedState,
+  setUserClearedState,
+  setupCrossTabSync,
+  cleanupCrossTabSync,
+  incrementSchemaVersion,
+} from '@/lib/store';
 import { useUndoRedoShortcuts } from '@/hooks/use-undo-redo';
 import AES from 'crypto-js/aes';
 import UTF8 from 'crypto-js/enc-utf8';
@@ -30,23 +37,44 @@ export function RootProvider({ children }: { children: React.ReactNode }) {
   // Initialize global undo/redo keyboard shortcuts
   useUndoRedoShortcuts();
 
-  // Initialize from localStorage on mount
+  // Initialize from localStorage on mount and set up cross-tab sync
   useEffect(() => {
     initializeFromLocalStorage();
+    setupCrossTabSync();
     setIsInitialized(true);
+
+    return () => {
+      cleanupCrossTabSync();
+    };
   }, [initializeFromLocalStorage]);
 
   // Load sample data if no tables exist after initialization
+  // BUT respect the user-cleared flag to avoid "resurrecting" deleted data
   useEffect(() => {
     if (!isInitialized) return;
 
     const tablesData = localStorage.getItem('table-list');
     const parsedTables = tablesData ? JSON.parse(tablesData) : {};
+    const userIntentionallyCleared = hasUserClearedState();
 
-    // Load sample data if no tables exist
+    // Load sample data ONLY if:
+    // 1. No tables exist AND
+    // 2. User has NOT intentionally cleared all tables
     if (!tablesData || Object.keys(parsedTables).length === 0) {
+      if (userIntentionallyCleared) {
+        console.log(
+          '[RootProvider] Empty state detected, but user intentionally cleared tables. Not loading sample data.',
+        );
+        return;
+      }
+
+      console.log(
+        '[RootProvider] Fresh install detected. Loading sample data.',
+      );
       const sampleData = getSampleData();
       setTables(sampleData.definitions, sampleData.paths);
+      // Clear the user-cleared flag since we're loading fresh data
+      setUserClearedState(false);
       // Auto arrange after a short delay to ensure DOM is ready
       setTimeout(() => {
         autoArrange();
@@ -78,8 +106,22 @@ export function RootProvider({ children }: { children: React.ReactNode }) {
             paths[`/${key}`] = { get: {} };
           });
 
+          // Increment schema version for hash import (invalidates stale AI responses)
+          incrementSchemaVersion();
+
           // Set tables with positions preserved
           useStore.setState({ tables: result.tables });
+
+          // Clear user-cleared flag since we're loading tables from shared link
+          if (Object.keys(result.tables).length > 0) {
+            setUserClearedState(false);
+          }
+
+          console.log(
+            '[RootProvider] Loaded',
+            Object.keys(result.tables).length,
+            'tables from shared link',
+          );
         }
 
         if (result.schemaView) {

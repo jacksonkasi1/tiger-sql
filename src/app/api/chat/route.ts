@@ -435,6 +435,13 @@ export async function POST(req: Request) {
     // Get schema state from request body (client sends current state)
     const schemaState: TableState = cloneTables(body.schema) || {};
 
+    // Track schema version from client for stale update detection
+    const clientSchemaVersion: number = body.schemaVersion ?? 0;
+    const clientSchemaHash: string = body.schemaHash ?? '';
+    console.log(
+      `[api/chat] Received schema: ${Object.keys(schemaState).length} tables, version: ${clientSchemaVersion}, hash: ${clientSchemaHash}`,
+    );
+
     // Track operations for progress reporting and undo/redo (Phase 5.2)
     let operationCount = 0;
     let totalOperations = 0;
@@ -1258,6 +1265,7 @@ export async function POST(req: Request) {
                 data: {
                   tables: cloneTables(schemaState),
                   isComplete: false,
+                  schemaVersion: clientSchemaVersion, // Echo back for stale detection
                 },
               });
             }
@@ -1275,6 +1283,7 @@ export async function POST(req: Request) {
               data: {
                 tables: cloneTables(schemaState),
                 isComplete: true,
+                schemaVersion: clientSchemaVersion, // Echo back for stale detection
               },
             });
 
