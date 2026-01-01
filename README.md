@@ -375,6 +375,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 - [x] MCP Integration - Multi-server architecture for PostgreSQL knowledge
 - [ ] Additional MCP Servers (pgvector, PostGIS, Supabase)
 - [ ] Multi-schema support
+- [ ] Multi-project support connected to GitHub repository
 - [ ] Collaborative editing
 - [ ] Schema versioning
 - [ ] More export formats (JSON, YAML)

@@ -101,7 +101,7 @@ export function Helper({ onChatOpen, isChatOpen = false }: HelperProps) {
     })
       .then((dataUrl) => {
         const link = document.createElement('a');
-        link.download = 'Supabase Schema.png';
+        link.download = 'Tiger SQL.png';
         link.href = dataUrl;
         link.click();
       })
@@ -118,7 +118,7 @@ export function Helper({ onChatOpen, isChatOpen = false }: HelperProps) {
           })
             .then((dataUrl) => {
               const link = document.createElement('a');
-              link.download = 'Supabase Schema.png';
+              link.download = 'Tiger SQL.png';
               link.href = dataUrl;
               link.click();
             })
