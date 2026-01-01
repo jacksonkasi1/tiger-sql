@@ -173,8 +173,10 @@ export function ColumnRow({
   // Handle saving enum values
   const handleSaveEnumValues = (newValues: string[]) => {
     if (column.enumTypeName) {
-      // Update the global enum type
+      // Update the global enum type (will create if doesn't exist)
       updateEnumType(column.enumTypeName, newValues);
+      // Also update the column's enumValues for consistency
+      updateColumn(tableId, columnIndex, { enumValues: newValues });
     } else {
       // Update just this column's enum values
       updateColumn(tableId, columnIndex, { enumValues: newValues });
