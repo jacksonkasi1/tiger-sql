@@ -1046,43 +1046,43 @@ const SmartColumnRow: React.FC<Props> = ({ column }) => {
 Before writing code, verify:
 
 ### 🔴 Critical (Ship Blockers)
-- [ ] **SERIAL Detection:** Collapse `nextval()` patterns back to SERIAL/BIGSERIAL
-- [ ] **String Literal Safety:** Don't match keywords inside quoted strings
-- [ ] **Nested Parens:** Handle subqueries in DEFAULT expressions with balanced parser
-- [ ] **Comment Stripping:** Remove `--` and `/* */` before parsing
-- [ ] **Greedy Regex Fix:** Use whitelist approach for multi-word types
-- [ ] **XSS Prevention:** Never use dangerouslySetInnerHTML with column data
+- [x] **SERIAL Detection:** Collapse `nextval()` patterns back to SERIAL/BIGSERIAL ✅
+- [x] **String Literal Safety:** Don't match keywords inside quoted strings ✅
+- [x] **Nested Parens:** Handle subqueries in DEFAULT expressions with balanced parser ✅
+- [x] **Comment Stripping:** Remove `--` and `/* */` before parsing ✅
+- [x] **Greedy Regex Fix:** Use whitelist approach for multi-word types ✅
+- [x] **XSS Prevention:** Never use dangerouslySetInnerHTML with column data ✅
 
 ### Data Integrity
-- [ ] **Round-Trip Safety:** Raw `format` string is never mutated in store
-- [ ] **Selectors:** `sanitizeTypeString()` and `parseColumnType()` are pure functions
-- [ ] **Table-Level Constraints:** Parser back-propagates PKs, FKs, UNIQUEs from CREATE TABLE footer
+- [x] **Round-Trip Safety:** Raw `format` string is never mutated in store ✅
+- [x] **Selectors:** `sanitizeTypeString()` and `parseColumnType()` are pure functions ✅
+- [x] **Table-Level Constraints:** Parser back-propagates PKs, FKs, UNIQUEs from CREATE TABLE footer ✅
 - [ ] **Named Constraints:** Preserve constraint names for PK/FK/UNIQUE/CHECK
 - [ ] **Cache Invalidation:** Clear baseType/modifiers when format changes
 
 ### Parser Robustness
 - [ ] **Graceful Degradation:** Return partial results on parse failure
 - [ ] **Error Reporting:** Surface line numbers and clear error messages
-- [ ] **Case Handling:** Normalize to lowercase internally, preserve case for display
+- [x] **Case Handling:** Normalize to lowercase internally, preserve case for display ✅
 
 ### User Experience
 - [ ] **Edit UX:** Column editing uses form-based UI, not raw SQL input
-- [ ] **Tooltips:** Use React Portal to avoid clipping in React Flow canvas
-- [ ] **Badge Priority:** Implement priority logic to avoid badge clutter
+- [x] **Tooltips:** Use React Portal to avoid clipping in React Flow canvas ✅
+- [x] **Badge Priority:** Implement priority logic to avoid badge clutter ✅
 - [ ] **Search:** Schema search queries data model, not just DOM
 - [ ] **Copy/Paste:** Copying nodes produces executable SQL, not visual text
 - [ ] **Touch Support:** Tap to show tooltips on mobile/tablet
 
 ### Accessibility
-- [ ] **Aria Labels:** All icon-only elements have descriptive labels
-- [ ] **Keyboard Nav:** Tooltips accessible via keyboard
-- [ ] **Color Independence:** Badges distinguishable without color alone
-- [ ] **Screen Reader:** Full type announced on focus
+- [x] **Aria Labels:** All icon-only elements have descriptive labels ✅
+- [x] **Keyboard Nav:** Tooltips accessible via keyboard ✅
+- [x] **Color Independence:** Badges distinguishable without color alone ✅
+- [x] **Screen Reader:** Full type announced on focus ✅
 
 ### Performance
-- [ ] **Parsing:** Memoized (useMemo or pre-computed on import)
-- [ ] **Rendering:** No regex in render path without memoization
-- [ ] **Extension Types:** Support vector, citext, hstore, ltree, tsvector
+- [x] **Parsing:** Memoized (useMemo or pre-computed on import) ✅
+- [x] **Rendering:** No regex in render path without memoization ✅
+- [x] **Extension Types:** Support vector, citext, hstore, ltree, tsvector ✅
 
 ---
 
@@ -1101,3 +1101,9 @@ Before writing code, verify:
 - **v3.0** - Added Critical Issues section (SERIAL, string literals, nested parens, comments, regex bug, XSS)
 - **v3.1** - Added High Priority items (extension types, malformed input, touch support, named constraints)
 - **v3.2** - Expanded checklist with accessibility, parser robustness, and critical ship blockers
+- **v4.0** - **IMPLEMENTATION COMPLETE** - Core features implemented:
+  - `schema-display-utils.ts` with all critical parsing functions
+  - `SmartColumnRow.tsx` with memoization and accessibility
+  - `SmartTableNode.tsx` integrated into FlowCanvas
+  - Table-level constraint back-propagation in sql-parser.ts
+  - Badge priority system with extension type support
