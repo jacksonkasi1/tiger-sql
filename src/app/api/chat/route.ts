@@ -565,7 +565,6 @@ export async function POST(req: Request) {
           }
 
           const table = schemaState[resolvedId];
-          const userFacingTableName = table?.title ?? tableId;
 
           if (!table) {
             return {
