@@ -25,10 +25,34 @@ export interface OperationRecord {
 // Schema Types
 // ============================================================================
 
+export interface ColumnModifiers {
+  identity?: boolean | 'always' | 'by_default';
+  generated?: {
+    expression: string;
+    stored: boolean;
+  };
+  check?: {
+    expression: string;
+    name?: string;
+  };
+  references?: {
+    table: string;
+    column: string;
+    onDelete?: string;
+    onUpdate?: string;
+  };
+  collate?: string;
+  deferrable?: boolean;
+  isArray?: boolean;
+  arrayDimensions?: number;
+}
+
 export interface Column {
   title: string;
-  format: string;
+  format: string; // Raw SQL string (NEVER MUTATE - source of truth)
   type: string;
+  baseType?: string; // Parsed base type (e.g., 'BIGINT', 'TIMESTAMP WITH TIME ZONE')
+  modifiers?: ColumnModifiers; // Structured modifiers (computed/cached)
   default?: any;
   required?: boolean;
   pk?: boolean;

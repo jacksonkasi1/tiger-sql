@@ -12,15 +12,17 @@ import { debugLog } from './debug';
  * Convert table state to ReactFlow nodes
  */
 export function tablesToNodes(tables: TableState): FlowNode[] {
-  return Object.values(tables).map((table) => {
+  // Use Object.entries to get both key and value
+  // The key is the store key (e.g., "public.users"), which must match for position updates
+  return Object.entries(tables).map(([key, table]) => {
     const nodeType = table.is_view ? 'view' : 'table';
 
     return {
-      id: table.title,
+      id: key, // Use the store key as node ID to ensure position updates work correctly
       type: nodeType,
       position: table.position || { x: 0, y: 0 },
       data: {
-        title: table.title,
+        title: table.title || key, // Display title (fallback to key if missing)
         columns: table.columns || [],
         is_view: table.is_view,
         schema: table.schema, // Include schema in node data (undefined if no schema)
@@ -38,13 +40,14 @@ export function tablesToEdges(tables: TableState): FlowEdge[] {
 
   debugLog.log('[tablesToEdges] Processing tables:', Object.keys(tables));
 
-  Object.values(tables).forEach((table) => {
+  // Use Object.entries to get both the store key and the table value
+  Object.entries(tables).forEach(([sourceKey, table]) => {
     if (!table.columns) return;
 
     table.columns.forEach((column, sourceIndex) => {
       if (column.fk) {
         debugLog.log(
-          `[tablesToEdges] Found FK: ${table.title}.${column.title} -> ${column.fk}`,
+          `[tablesToEdges] Found FK: ${sourceKey}.${column.title} -> ${column.fk}`,
         );
         // Parse FK format: "schema.table.column" or "table.column"
         const fkParts = column.fk.split('.');
@@ -90,11 +93,11 @@ export function tablesToEdges(tables: TableState): FlowEdge[] {
         // Also try finding by matching table.title
         if (!targetTableData) {
           const entry = Object.entries(tables).find(
-            ([, t]) => t.title === targetTableName
+            ([, t]) => t.title === targetTableName,
           );
           if (entry) {
             targetTableData = entry[1];
-            actualTargetKey = entry[1].title; // Use title for node ID matching
+            actualTargetKey = entry[0]; // Use the store key for node ID matching
           }
         }
 
@@ -110,15 +113,15 @@ export function tablesToEdges(tables: TableState): FlowEdge[] {
           return;
         }
 
-        // Create unique handle IDs matching TableNode format: tableName_columnName_index
-        // IMPORTANT: Use table.title for node IDs (matches tablesToNodes)
-        const sourceHandleId = `${table.title}_${column.title}_${sourceIndex}`;
-        const targetHandleId = `${targetTableData.title}_${targetColumn}_${targetIndex}`;
+        // Create unique handle IDs matching TableNode format: storeKey_columnName_index
+        // IMPORTANT: Use store keys for node IDs (matches tablesToNodes which uses keys)
+        const sourceHandleId = `${sourceKey}_${column.title}_${sourceIndex}`;
+        const targetHandleId = `${actualTargetKey}_${targetColumn}_${targetIndex}`;
 
         const newEdge = {
           id: edgeId,
-          source: table.title, // Node ID uses table.title
-          target: targetTableData.title, // Node ID uses table.title (not key with schema)
+          source: sourceKey, // Node ID uses store key
+          target: actualTargetKey, // Node ID uses store key
           sourceHandle: sourceHandleId,
           targetHandle: targetHandleId,
           type: 'smoothstep',
@@ -138,8 +141,8 @@ export function tablesToEdges(tables: TableState): FlowEdge[] {
 
         debugLog.log('[tablesToEdges] Creating edge:', {
           id: edgeId,
-          source: table.title,
-          target: targetTableData.title,
+          source: sourceKey,
+          target: actualTargetKey,
           sourceHandle: sourceHandleId,
           targetHandle: targetHandleId,
         });

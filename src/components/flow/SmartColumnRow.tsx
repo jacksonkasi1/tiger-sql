@@ -1,0 +1,390 @@
+'use client';
+
+import React, { useMemo } from 'react';
+import { Handle, Position } from '@xyflow/react';
+import {
+  Key,
+  Link2,
+  Calculator,
+  CheckCircle,
+  Sparkles,
+  Circle,
+  Layers,
+  Globe,
+  Brain,
+  ALargeSmall,
+  Braces,
+  GitBranch,
+  Search,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Column } from '@/lib/types';
+import {
+  parseColumnType,
+  sanitizeTypeString,
+  getVisibleBadges,
+  BadgeInfo,
+} from '@/lib/schema-display-utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+
+interface SmartColumnRowProps {
+  column: Column;
+  tableName: string;
+  index: number;
+  selected?: boolean;
+}
+
+/**
+ * Icon mapping for badge types with accessibility support
+ */
+const BadgeIcon: React.FC<{ badge: BadgeInfo; className?: string }> = ({
+  badge,
+  className,
+}) => {
+  const iconClass = cn('w-3 h-3', className);
+  const ariaLabel = badge.tooltip || badge.type;
+
+  switch (badge.icon) {
+    case 'Key':
+      return (
+        <Key
+          className={cn(iconClass, 'text-yellow-500')}
+          aria-label={ariaLabel}
+          role="img"
+        />
+      );
+    case 'Link2':
+      return (
+        <Link2
+          className={cn(iconClass, 'text-emerald-500')}
+          aria-label={ariaLabel}
+          role="img"
+        />
+      );
+    case 'Calculator':
+      return (
+        <Calculator
+          className={cn(iconClass, 'text-purple-500')}
+          aria-label={ariaLabel}
+          role="img"
+        />
+      );
+    case 'CheckCircle':
+      return (
+        <CheckCircle
+          className={cn(iconClass, 'text-orange-500')}
+          aria-label={ariaLabel}
+          role="img"
+        />
+      );
+    case 'Sparkles':
+      return (
+        <Sparkles
+          className={cn(iconClass, 'text-blue-500')}
+          aria-label={ariaLabel}
+          role="img"
+        />
+      );
+    case 'Layers':
+      return (
+        <Layers
+          className={cn(iconClass, 'text-gray-500')}
+          aria-label={ariaLabel}
+          role="img"
+        />
+      );
+    // Extension type icons
+    case 'Globe':
+      return (
+        <Globe
+          className={cn(iconClass, 'text-teal-500')}
+          aria-label={ariaLabel}
+          role="img"
+        />
+      );
+    case 'Brain':
+      return (
+        <Brain
+          className={cn(iconClass, 'text-pink-500')}
+          aria-label={ariaLabel}
+          role="img"
+        />
+      );
+    case 'CaseSensitive':
+      return (
+        <ALargeSmall
+          className={cn(iconClass, 'text-indigo-500')}
+          aria-label={ariaLabel}
+          role="img"
+        />
+      );
+    case 'Braces':
+      return (
+        <Braces
+          className={cn(iconClass, 'text-amber-500')}
+          aria-label={ariaLabel}
+          role="img"
+        />
+      );
+    case 'GitBranch':
+      return (
+        <GitBranch
+          className={cn(iconClass, 'text-lime-500')}
+          aria-label={ariaLabel}
+          role="img"
+        />
+      );
+    case 'Search':
+      return (
+        <Search
+          className={cn(iconClass, 'text-cyan-500')}
+          aria-label={ariaLabel}
+          role="img"
+        />
+      );
+    default:
+      return null;
+  }
+};
+
+/**
+ * SmartColumnRow - A performance-optimized column row component that:
+ * 1. Uses memoization to avoid regex parsing on every render
+ * 2. Displays abbreviated type with badges using priority logic
+ * 3. Shows full details on hover via Portal-based tooltip (on type, not 3-dot button)
+ * 4. Includes accessibility features (aria-labels, keyboard navigation)
+ */
+export const SmartColumnRow: React.FC<SmartColumnRowProps> = React.memo(
+  ({ column, tableName, index, selected }) => {
+    const handleId = `${tableName}_${column.title}_${index}`;
+
+    // MEMOIZED: Only re-parse if column.format changes
+    const { baseType, modifiers } = useMemo(
+      () => parseColumnType(sanitizeTypeString(column.format)),
+      [column.format],
+    );
+
+    // MEMOIZED: Badge priority calculation
+    const badges = useMemo(() => {
+      // Merge stored modifiers with parsed modifiers
+      const mergedColumn = {
+        ...column,
+        modifiers: { ...column.modifiers, ...modifiers },
+      };
+      return getVisibleBadges(mergedColumn);
+    }, [column, modifiers]);
+
+    const isPK = column.pk;
+    const isFK = column.fk || modifiers.references;
+
+    // Build tooltip content for screen readers and hover
+    const tooltipContent = useMemo(() => {
+      const parts: { label: string; value: string }[] = [
+        { label: 'Type', value: column.format },
+      ];
+
+      if (modifiers.identity) {
+        parts.push({
+          label: 'Identity',
+          value:
+            modifiers.identity === 'always'
+              ? 'GENERATED ALWAYS'
+              : 'GENERATED BY DEFAULT',
+        });
+      }
+
+      if (modifiers.generated) {
+        parts.push({
+          label: 'Computed',
+          value: modifiers.generated.expression,
+        });
+      }
+
+      if (modifiers.check) {
+        parts.push({ label: 'Check', value: modifiers.check.expression });
+      }
+
+      if (column.fk) {
+        parts.push({ label: 'References', value: column.fk });
+      }
+
+      if (column.default !== undefined) {
+        parts.push({ label: 'Default', value: String(column.default) });
+      }
+
+      if (column.required) {
+        parts.push({ label: 'Required', value: 'Yes' });
+      }
+
+      if (column.unique) {
+        parts.push({ label: 'Unique', value: 'Yes' });
+      }
+
+      // Handle enum values - stored in column.enumValues
+      if (column.enumValues && column.enumValues.length > 0) {
+        parts.push({
+          label: 'Enum Values',
+          value: column.enumValues.join(', '),
+        });
+      }
+
+      return parts;
+    }, [column, modifiers]);
+
+    // Build aria-label for the entire row
+    const rowAriaLabel = useMemo(() => {
+      const parts = [column.title, baseType];
+      if (isPK) parts.push('Primary Key');
+      if (isFK) parts.push('Foreign Key');
+      if (column.required) parts.push('Required');
+      if (column.unique) parts.push('Unique');
+      return parts.join(', ');
+    }, [column, baseType, isPK, isFK]);
+
+    return (
+      <div
+        className={cn(
+          'relative group py-2 px-3 flex items-center gap-2 border-b border-border/50 last:border-b-0',
+          'hover:bg-muted/40 transition-colors',
+          'border-l-[3px] border-transparent',
+          isPK && 'border-l-yellow-500/50',
+          'focus-within:bg-muted/60',
+        )}
+        role="row"
+        aria-label={rowAriaLabel}
+        tabIndex={0}
+      >
+        {/* Left Handle - Target (for incoming connections) */}
+        <Handle
+          type="target"
+          position={Position.Left}
+          id={handleId}
+          className={cn(
+            '!w-3 !h-3 !bg-blue-500 !border-2 !border-background !-left-[9px] !transition-opacity',
+            selected ? '!opacity-100' : '!opacity-0',
+          )}
+          style={{ top: '50%', transform: 'translateY(-50%)' }}
+          aria-hidden="true"
+        />
+
+        {/* Right Handle - Source (for outgoing connections) */}
+        <Handle
+          type="source"
+          position={Position.Right}
+          id={handleId}
+          className={cn(
+            '!w-3 !h-3 !border-2 !border-background !-right-[7px] !transition-opacity',
+            isFK ? '!bg-emerald-500' : '!bg-blue-500',
+            selected ? '!opacity-100' : '!opacity-0',
+          )}
+          style={{ top: '50%', transform: 'translateY(-50%)' }}
+          aria-hidden="true"
+        />
+
+        {/* Primary badge icon */}
+        <div className="shrink-0 w-4 flex justify-center" aria-hidden="true">
+          {badges[0] ? (
+            <BadgeIcon badge={badges[0]} />
+          ) : (
+            <Circle className="h-2 w-2 text-muted-foreground/30" />
+          )}
+        </div>
+
+        {/* Column Name */}
+        <span
+          className="flex-1 text-sm font-medium truncate font-mono"
+          title={column.title}
+        >
+          {column.title}
+        </span>
+
+        {/* Abbreviated Type with Tooltip - hover type to see full details */}
+        <TooltipProvider delayDuration={200}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                className="text-xs text-muted-foreground font-mono shrink-0 max-w-[100px] truncate cursor-help hover:text-foreground transition-colors"
+                aria-label={`Type: ${baseType}${modifiers.isArray ? ' array' : ''}`}
+              >
+                {baseType}
+                {modifiers.isArray ? '[]' : ''}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent
+              side="right"
+              align="start"
+              sideOffset={8}
+              className="z-[9999] max-w-[350px] max-h-[300px] overflow-y-auto font-mono text-xs p-0"
+              // Use portal to ensure tooltip renders above everything
+              forceMount={undefined}
+            >
+              <div className="p-2 space-y-1">
+                {tooltipContent.map(({ label, value }, idx) => (
+                  <div key={idx} className="flex gap-2">
+                    <span className="text-muted-foreground shrink-0">
+                      {label}:
+                    </span>
+                    <span
+                      className={cn(
+                        'break-all',
+                        label === 'Enum Values' && 'whitespace-pre-wrap',
+                      )}
+                    >
+                      {value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+
+        {/* Additional badges (after primary) - no more 3-dot button */}
+        <div
+          className="flex items-center gap-0.5"
+          role="group"
+          aria-label="Column modifiers"
+        >
+          {badges.slice(1, 3).map((badge) => (
+            <React.Fragment key={badge.type}>
+              {badge.label ? (
+                <span
+                  className={cn(
+                    'text-[9px] font-bold px-1 rounded',
+                    badge.color === 'blue' &&
+                      'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400',
+                    badge.color === 'purple' &&
+                      'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400',
+                    badge.color === 'orange' &&
+                      'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400',
+                    badge.color === 'red' && 'text-red-500',
+                    badge.color === 'gray' &&
+                      'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+                    badge.color === 'teal' &&
+                      'bg-teal-100 text-teal-600 dark:bg-teal-900/30 dark:text-teal-400',
+                  )}
+                  title={badge.tooltip}
+                  aria-label={badge.tooltip || badge.type}
+                  role="status"
+                >
+                  {badge.label}
+                </span>
+              ) : (
+                <span title={badge.tooltip}>
+                  <BadgeIcon badge={badge} className="w-2.5 h-2.5" />
+                </span>
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+    );
+  },
+);
+
+SmartColumnRow.displayName = 'SmartColumnRow';

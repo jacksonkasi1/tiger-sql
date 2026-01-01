@@ -27,6 +27,74 @@ import {
   HISTORY_STORAGE_KEY,
 } from './history';
 
+// ============================================================================
+// Cross-Tab Synchronization Constants
+// ============================================================================
+const STORAGE_TIMESTAMP_KEY = 'schema-last-modified';
+const USER_CLEARED_STATE_KEY = 'schema-user-cleared';
+
+// ============================================================================
+// Schema Version Tracking
+// ============================================================================
+// Monotonically increasing version counter to detect stale updates
+let schemaVersion = 0;
+
+/**
+ * Get the current schema version.
+ * This can be sent with API requests to detect stale responses.
+ */
+export function getSchemaVersion(): number {
+  return schemaVersion;
+}
+
+/**
+ * Increment and return the new schema version.
+ * Call this whenever the schema is modified locally.
+ */
+export function incrementSchemaVersion(): number {
+  schemaVersion++;
+  console.log('[SchemaVersion] Incremented to', schemaVersion);
+  return schemaVersion;
+}
+
+/**
+ * Generate a hash of the current table state for comparison.
+ * Used to detect if incoming updates are based on stale state.
+ */
+export function getTablesHash(tables: TableState): string {
+  const keys = Object.keys(tables).sort();
+  return `${keys.length}:${keys.join(',')}`;
+}
+
+/**
+ * Check if the user has intentionally cleared all tables.
+ * This prevents auto-recovery from loading sample data when user wants empty state.
+ */
+export function hasUserClearedState(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem(USER_CLEARED_STATE_KEY) === 'true';
+}
+
+/**
+ * Mark that the user has intentionally cleared all tables.
+ */
+export function setUserClearedState(cleared: boolean): void {
+  if (typeof window === 'undefined') return;
+  if (cleared) {
+    localStorage.setItem(USER_CLEARED_STATE_KEY, 'true');
+  } else {
+    localStorage.removeItem(USER_CLEARED_STATE_KEY);
+  }
+}
+
+/**
+ * Set the last modification timestamp in localStorage.
+ */
+function setStorageTimestamp(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(STORAGE_TIMESTAMP_KEY, Date.now().toString());
+}
+
 interface AppState {
   // Modal state
   isModalOpen: boolean;
@@ -48,6 +116,9 @@ interface AppState {
     meta?: { enumTypes?: Record<string, EnumTypeDefinition> },
   ) => void;
   updateTablePosition: (tableId: string, x: number, y: number) => void;
+  setTablePositions: (
+    updates: Record<string, { x: number; y: number }>,
+  ) => void;
   updateTableName: (tableId: string, newName: string) => void;
   updateTableColor: (tableId: string, color: string) => void;
   updateTableComment: (tableId: string, comment: string) => void;
@@ -203,6 +274,9 @@ let saveTimeoutId: NodeJS.Timeout | null = null;
 const SAVE_DEBOUNCE_MS = 500; // Wait 500ms before saving
 const MAX_STORAGE_SIZE = 5 * 1024 * 1024; // 5MB limit
 
+// Track if we're currently syncing from another tab to prevent save loops
+let isSyncingFromOtherTab = false;
+
 function debouncedSave(saveFn: () => void) {
   if (saveTimeoutId) {
     clearTimeout(saveTimeoutId);
@@ -273,6 +347,14 @@ function performSave() {
     localStorage.setItem('collapsed-schemas', collapsedSchemasJson);
     localStorage.setItem('enum-types', enumTypesJson);
     localStorage.setItem('connection-mode', state.connectionMode);
+
+    // Update timestamp for cross-tab conflict resolution
+    setStorageTimestamp();
+
+    // If we're saving tables, clear the user-cleared flag (user is actively working)
+    if (Object.keys(state.tables).length > 0) {
+      setUserClearedState(false);
+    }
   } catch (error) {
     if (error instanceof Error && error.name === 'QuotaExceededError') {
       console.error('localStorage quota exceeded. Clearing cache...');
@@ -293,6 +375,88 @@ function flushPendingSave() {
     // Execute the pending save immediately
     performSave();
   }
+}
+
+// ============================================================================
+// Cross-Tab Synchronization
+// ============================================================================
+
+/**
+ * Handle storage events from other tabs.
+ * When another tab updates localStorage, sync our in-memory state.
+ */
+function handleCrossTabStorageEvent(event: StorageEvent) {
+  // Only handle table-list changes
+  if (event.key !== 'table-list') return;
+
+  // Ignore if we triggered this change
+  if (isSyncingFromOtherTab) return;
+
+  // Ignore if no new value (item was deleted)
+  if (!event.newValue) return;
+
+  console.log('[CrossTabSync] Detected table-list change from another tab');
+
+  try {
+    isSyncingFromOtherTab = true;
+
+    const newTables = JSON.parse(event.newValue);
+
+    // Also sync related data
+    const edgeRelationshipsData = localStorage.getItem('edge-relationships');
+    const visibleSchemasData = localStorage.getItem('visible-schemas');
+    const enumTypesData = localStorage.getItem('enum-types');
+
+    const updates: Partial<AppState> = {
+      tables: newTables,
+    };
+
+    if (edgeRelationshipsData) {
+      updates.edgeRelationships = JSON.parse(edgeRelationshipsData);
+    }
+
+    if (visibleSchemasData) {
+      updates.visibleSchemas = new Set(JSON.parse(visibleSchemasData));
+    }
+
+    if (enumTypesData) {
+      updates.enumTypes = JSON.parse(enumTypesData);
+    }
+
+    // Update the store with new state from other tab
+    useStore.setState(updates);
+
+    console.log(
+      '[CrossTabSync] Synced state from other tab:',
+      Object.keys(newTables).length,
+      'tables',
+    );
+  } catch (error) {
+    console.error('[CrossTabSync] Error syncing from other tab:', error);
+  } finally {
+    isSyncingFromOtherTab = false;
+  }
+}
+
+/**
+ * Set up cross-tab synchronization.
+ * This should be called once when the app initializes.
+ */
+export function setupCrossTabSync() {
+  if (typeof window === 'undefined') return;
+
+  // Listen for storage events from other tabs
+  window.addEventListener('storage', handleCrossTabStorageEvent);
+
+  console.log('[CrossTabSync] Cross-tab synchronization enabled');
+}
+
+/**
+ * Clean up cross-tab synchronization listeners.
+ */
+export function cleanupCrossTabSync() {
+  if (typeof window === 'undefined') return;
+  window.removeEventListener('storage', handleCrossTabStorageEvent);
 }
 
 // Set up event listeners to flush on app close/unload
@@ -384,6 +548,9 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     setTables: (definition: any, paths: any) => {
+      // Increment schema version for bulk import
+      incrementSchemaVersion();
+
       const tableGroup: TableState = {};
       const currentTables = get().tables;
 
@@ -467,6 +634,28 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     updateTablesFromAI: (updatedTables, meta) => {
+      // Increment schema version since we're updating from AI
+      incrementSchemaVersion();
+
+      // Log the update for debugging
+      const incomingCount = Object.keys(updatedTables).length;
+      const currentCount = Object.keys(get().tables).length;
+      console.log(
+        `[updateTablesFromAI] Updating tables: ${currentCount} -> ${incomingCount}`,
+      );
+
+      // If AI is clearing all tables (going from N > 0 to 0), set the user-cleared flag
+      // This prevents sample data from loading on page refresh
+      if (currentCount > 0 && incomingCount === 0) {
+        console.log(
+          '[updateTablesFromAI] AI cleared all tables - marking state as intentionally cleared',
+        );
+        setUserClearedState(true);
+      } else if (incomingCount > 0) {
+        // If AI is adding tables, clear the user-cleared flag
+        setUserClearedState(false);
+      }
+
       set((state) => {
         const nextTables: TableState = {};
         const discoveredSchemas = new Set<string>();
@@ -517,6 +706,32 @@ export const useStore = create<AppState>((set, get) => {
       get().saveToLocalStorage();
     },
 
+    setTablePositions: (updates) => {
+      set((state) => {
+        const newTables = { ...state.tables };
+        let hasChanges = false;
+
+        Object.entries(updates).forEach(([id, pos]) => {
+          if (newTables[id]) {
+            newTables[id] = {
+              ...newTables[id],
+              position: pos,
+            };
+            hasChanges = true;
+          }
+        });
+
+        if (!hasChanges) return state;
+
+        return {
+          tables: newTables,
+        };
+      });
+
+      get().pushHistory(HistoryLabels.autoArrange());
+      get().saveToLocalStorage();
+    },
+
     updateTablePosition: (tableId, x, y) => {
       set((state) => {
         const existing = state.tables[tableId];
@@ -538,6 +753,8 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     updateTableName: (tableId, newName) => {
+      // Increment schema version for local change
+      incrementSchemaVersion();
       const currentTables = get().tables;
       const table = currentTables[tableId];
       if (!table) return;
@@ -654,6 +871,8 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     updateTableColor: (tableId, color) => {
+      // Increment schema version for local change
+      incrementSchemaVersion();
       const table = get().tables[tableId];
       if (!table) return;
 
@@ -678,6 +897,8 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     updateTableComment: (tableId, comment) => {
+      // Increment schema version for local change
+      incrementSchemaVersion();
       const table = get().tables[tableId];
       if (!table) return;
 
@@ -702,6 +923,8 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     addTable: () => {
+      // Increment schema version for local change
+      incrementSchemaVersion();
       const { tables, addTables, triggerFocusTable } = get();
 
       const baseName = 'new_table';
@@ -745,6 +968,8 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     addColumn: (tableId, column) => {
+      // Increment schema version for local change
+      incrementSchemaVersion();
       const table = get().tables[tableId];
       if (!table) return;
 
@@ -769,6 +994,8 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     updateColumn: (tableId, columnIndex, updates) => {
+      // Increment schema version for local change
+      incrementSchemaVersion();
       const table = get().tables[tableId];
       if (!table || !table.columns) return;
 
@@ -801,6 +1028,8 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     deleteColumn: (tableId, columnIndex) => {
+      // Increment schema version for local change
+      incrementSchemaVersion();
       const table = get().tables[tableId];
       if (!table || !table.columns) return;
 
@@ -831,6 +1060,8 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     reorderColumns: (tableId, oldIndex, newIndex) => {
+      // Increment schema version for local change
+      incrementSchemaVersion();
       const table = get().tables[tableId];
       if (!table || !table.columns) return;
 
@@ -862,7 +1093,11 @@ export const useStore = create<AppState>((set, get) => {
       const table = get().tables[tableId];
       if (!table) return;
 
+      // Increment schema version for local change
+      incrementSchemaVersion();
+
       const tableName = tableId;
+      const currentTableCount = Object.keys(get().tables).length;
 
       set((state) => {
         const newTables = { ...state.tables };
@@ -877,12 +1112,22 @@ export const useStore = create<AppState>((set, get) => {
         };
       });
 
+      // If this was the last table, mark that user intentionally cleared state
+      if (currentTableCount === 1) {
+        setUserClearedState(true);
+        console.log(
+          '[Store] User deleted last table - marking state as intentionally cleared',
+        );
+      }
+
       // Push history AFTER state change with the resulting state
       get().pushHistory(HistoryLabels.deleteTable(tableName));
       get().saveToLocalStorage();
     },
 
     reorderTables: (orderedIds) => {
+      // Increment schema version for local change
+      incrementSchemaVersion();
       set((state) => {
         const newTables: TableState = {};
         // Rebuild tables object in the new order
@@ -1160,6 +1405,8 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     addTables: (tablesToAdd: TableState, skipHistory?: boolean) => {
+      // Increment schema version for bulk add
+      incrementSchemaVersion();
       const tableCount = Object.keys(tablesToAdd).length;
 
       set((state) => {
@@ -1414,6 +1661,9 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     undo: () => {
+      // Increment schema version to invalidate any in-flight AI responses
+      incrementSchemaVersion();
+
       const { history } = get();
       console.log('[Undo] Before:', {
         currentIndex: history.currentIndex,
@@ -1478,6 +1728,9 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     redo: () => {
+      // Increment schema version to invalidate any in-flight AI responses
+      incrementSchemaVersion();
+
       const { history } = get();
       console.log('[Redo] Before:', {
         currentIndex: history.currentIndex,
@@ -1586,6 +1839,9 @@ export const useStore = create<AppState>((set, get) => {
       if (typeof window === 'undefined') return;
 
       try {
+        // Mark that user intentionally cleared the state
+        setUserClearedState(true);
+
         // Clear all schema-related data from localStorage
         localStorage.removeItem('table-list');
         localStorage.removeItem('edge-relationships');
@@ -1593,6 +1849,7 @@ export const useStore = create<AppState>((set, get) => {
         localStorage.removeItem('collapsed-schemas');
         localStorage.removeItem('enum-types');
         localStorage.removeItem(HISTORY_STORAGE_KEY);
+        localStorage.removeItem(STORAGE_TIMESTAMP_KEY);
 
         // Reset history state completely
         set({ history: createInitialHistoryState() });
@@ -1603,7 +1860,9 @@ export const useStore = create<AppState>((set, get) => {
           saveTimeoutId = null;
         }
 
-        console.log('Cache cleared successfully (including history)');
+        console.log(
+          'Cache cleared successfully (including history) - user cleared flag set',
+        );
 
         // Dispatch event for UI feedback
         if (typeof window !== 'undefined' && window.dispatchEvent) {

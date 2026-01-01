@@ -260,6 +260,12 @@ function parseColumns(
   enumTypes: Map<string, string[]> = new Map(),
 ): Column[] {
   const columns: Column[] = [];
+  const tableConstraints: Array<{
+    type: 'primary_key' | 'foreign_key' | 'unique' | 'check';
+    columns: string[];
+    reference?: { table: string; column: string };
+    expression?: string;
+  }> = [];
 
   // Extract the content between parentheses
   const match = createStatement.match(/\(([\s\S]+)\)/);
@@ -273,20 +279,74 @@ function parseColumns(
   for (const def of columnDefs) {
     const trimmed = def.trim();
 
-    // Skip constraint definitions
-    if (
-      trimmed.match(/^constraint\s+/i) ||
-      trimmed.match(/^primary\s+key\s*\(/i) ||
-      trimmed.match(/^foreign\s+key\s*\(/i) ||
-      trimmed.match(/^unique\s*\(/i) ||
-      trimmed.match(/^check\s*\(/i)
-    ) {
+    // Capture table-level constraints instead of skipping
+    if (trimmed.match(/^primary\s+key\s*\(/i)) {
+      const cols = extractConstraintColumns(trimmed);
+      tableConstraints.push({ type: 'primary_key', columns: cols });
+      continue;
+    }
+
+    if (trimmed.match(/^foreign\s+key\s*\(/i)) {
+      const { cols, ref } = extractForeignKeyInfo(trimmed);
+      tableConstraints.push({
+        type: 'foreign_key',
+        columns: cols,
+        reference: ref,
+      });
+      continue;
+    }
+
+    if (trimmed.match(/^unique\s*\(/i)) {
+      const cols = extractConstraintColumns(trimmed);
+      tableConstraints.push({ type: 'unique', columns: cols });
+      continue;
+    }
+
+    if (trimmed.match(/^check\s*\(/i)) {
+      // For table-level CHECK, we don't have specific columns, so skip for now
+      // (could be added later if needed)
+      continue;
+    }
+
+    // Skip other constraint definitions (named constraints, etc.)
+    if (trimmed.match(/^constraint\s+/i)) {
       continue;
     }
 
     const column = parseColumnDefinition(trimmed, enumTypes);
     if (column) {
       columns.push(column);
+    }
+  }
+
+  // BACK-PROPAGATION: Apply table-level constraints to columns
+  for (const constraint of tableConstraints) {
+    if (constraint.type === 'primary_key') {
+      constraint.columns.forEach((colName) => {
+        const col = columns.find((c) => c.title === colName);
+        if (col) {
+          col.pk = true;
+          col.required = true;
+        }
+      });
+    }
+
+    if (constraint.type === 'foreign_key' && constraint.reference) {
+      constraint.columns.forEach((colName) => {
+        const col = columns.find((c) => c.title === colName);
+        if (col) {
+          col.fk = `${constraint.reference!.table}.${constraint.reference!.column}`;
+        }
+      });
+    }
+
+    if (constraint.type === 'unique') {
+      constraint.columns.forEach((colName) => {
+        const col = columns.find((c) => c.title === colName);
+        if (col) {
+          col.unique = true;
+        }
+      });
     }
   }
 
@@ -538,6 +598,43 @@ function splitByComma(str: string): string[] {
   }
 
   return result;
+}
+
+/**
+ * Extract column names from constraint definitions like PRIMARY KEY (col1, col2)
+ */
+function extractConstraintColumns(constraintDef: string): string[] {
+  const match = constraintDef.match(/\(\s*([^)]+)\s*\)/);
+  if (!match) return [];
+
+  return match[1]
+    .split(',')
+    .map((col) => col.trim().replace(/["`]/g, '')) // Remove quotes
+    .filter((col) => col.length > 0);
+}
+
+/**
+ * Extract foreign key information from FOREIGN KEY (cols) REFERENCES table(col)
+ */
+function extractForeignKeyInfo(constraintDef: string): {
+  cols: string[];
+  ref?: { table: string; column: string };
+} {
+  const cols = extractConstraintColumns(constraintDef);
+
+  const refMatch = constraintDef.match(
+    /references\s+(?:["']?(\w+)["']?\.)?["']?(\w+)["']?\s*\(\s*["']?(\w+)["']?\s*\)/i,
+  );
+
+  let ref;
+  if (refMatch) {
+    ref = {
+      table: refMatch[1] ? `${refMatch[1]}.${refMatch[2]}` : refMatch[2],
+      column: refMatch[3],
+    };
+  }
+
+  return { cols, ref };
 }
 
 /**

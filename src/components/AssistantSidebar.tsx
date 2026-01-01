@@ -1,5 +1,7 @@
 'use client';
 
+import { getSchemaVersion, getTablesHash } from '@/lib/store';
+
 // ** import types
 import type {
   Table,
@@ -27,6 +29,8 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { useChatHistory } from '@/hooks/use-chat-history';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useResizable } from '@/hooks/useResizable';
+import { ResizeHandle } from '@/components/ui/resize-handle';
 
 // ** import ui components
 import { Button } from '@/components/ui/button';
@@ -66,9 +70,16 @@ function MessageTracker({ onMessagesChange, children }: MessageTrackerProps) {
 }
 
 interface AssistantSidebarProps {
-  isOpen?: boolean;
-  onOpenChange?: (open: boolean) => void;
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
 }
+
+const SIDEBAR_CONFIG = {
+  storageKey: 'assistant-sidebar-width',
+  defaultWidth: 400,
+  minWidth: 320,
+  maxWidth: 700,
+} as const;
 
 interface Model {
   id: string;
@@ -87,6 +98,15 @@ export function AssistantSidebar({
   onOpenChange,
 }: AssistantSidebarProps) {
   const { tables, updateTablesFromAI } = useStore();
+
+  // Resizable sidebar
+  const { width, isResizing, handleMouseDown, resetWidth } = useResizable({
+    storageKey: SIDEBAR_CONFIG.storageKey,
+    defaultWidth: SIDEBAR_CONFIG.defaultWidth,
+    minWidth: SIDEBAR_CONFIG.minWidth,
+    maxWidth: SIDEBAR_CONFIG.maxWidth,
+    side: 'right',
+  });
   const [aiProvider, setAiProvider] = useLocalStorage<'openai' | 'google'>(
     'ai-provider',
     'openai',
@@ -197,35 +217,45 @@ export function AssistantSidebar({
     onOpenChange?.(value);
   };
 
-  // Get current schema for the API
-  const listOfTables = useMemo(() => {
-    // Return tables object map to preserve IDs and state on server round-trip
-    if (Object.keys(tables).length > 0) {
-      return tables;
-    }
+  // Use a ref to always get the latest tables state at request time
+  // This prevents stale closures in the transport body
+  const tablesRef = useRef(tables);
+  tablesRef.current = tables;
 
-    // Fallback for empty state
+  // Track the schema version that was sent with each request
+  // Used to validate that responses are based on current state
+  const sentSchemaVersionRef = useRef<number>(0);
+
+  // Get current schema for the API - no fallback, just return empty object if no tables
+  // The AI should work with whatever state exists (even empty)
+  const getLatestTables = useCallback(() => {
+    return tablesRef.current;
+  }, []);
+
+  // Get schema info for validation
+  const getSchemaInfo = useCallback(() => {
+    const tables = tablesRef.current;
     return {
-      'users-default-id': {
-        title: 'users',
-        columns: [
-          { title: 'id', format: 'uuid', type: 'string' },
-          { title: 'email', format: 'email', type: 'string' },
-        ],
-      },
+      version: getSchemaVersion(),
+      hash: getTablesHash(tables),
+      tableCount: Object.keys(tables).length,
     };
-  }, [tables]);
+  }, []);
 
   // Ref to store the latest callbacks to avoid stale closures
   const callbacksRef = useRef({
     updateTablesFromAI,
     setOperationHistory,
     setHistoryIndex,
+    getLatestTables,
+    getSchemaInfo,
   });
   callbacksRef.current = {
     updateTablesFromAI,
     setOperationHistory,
     setHistoryIndex,
+    getLatestTables,
+    getSchemaInfo,
   };
 
   // Handle data parts from the stream - called via custom fetch handler
@@ -240,11 +270,31 @@ export function AssistantSidebar({
         // or when there are tables to update (intermediate updates)
         if (batchData.tables !== undefined) {
           const tableCount = Object.keys(batchData.tables).length;
+          const currentInfo = callbacksRef.current.getSchemaInfo();
+
+          // Check if the response is based on stale state
+          // We compare the schema version that was sent with this request
+          // against any local changes that may have happened since
+          const responseVersion = (batchData as any).schemaVersion;
+          const isStale =
+            responseVersion !== undefined &&
+            responseVersion < sentSchemaVersionRef.current;
+
+          if (isStale) {
+            console.warn(
+              `[handleDataPart] Ignoring stale schema update: response version ${responseVersion} < sent version ${sentSchemaVersionRef.current}`,
+            );
+            // Don't apply stale updates - they would overwrite newer local changes
+            break;
+          }
 
           // Apply updates for:
           // 1. Final complete state (even if empty - e.g., all tables dropped)
           // 2. Intermediate updates with actual tables
           if (batchData.isComplete || tableCount > 0) {
+            console.log(
+              `[handleDataPart] Applying schema update: ${currentInfo.tableCount} -> ${tableCount} tables`,
+            );
             updateTablesFromAI(batchData.tables);
 
             if (batchData.isComplete) {
@@ -287,16 +337,47 @@ export function AssistantSidebar({
   handleDataPartRef.current = handleDataPart;
 
   // Create transport with custom fetch to intercept data parts and pass body
+  // Use a custom fetch to inject fresh schema at request time (not memo time)
   const transport = useMemo(() => {
     return new DefaultChatTransport({
       api: '/api/chat',
+      // Don't include schema in static body - we'll inject it fresh in the fetch handler
       body: {
         provider: aiProvider === 'google' ? 'google' : 'openai',
         apiKey: aiProvider === 'google' ? googleApiKey : openaiApiKey,
         model: aiProvider === 'google' ? googleModel : openaiModel,
-        schema: listOfTables,
       },
       fetch: async (url, options) => {
+        // Inject fresh schema state at request time to prevent stale data
+        if (options?.body) {
+          try {
+            const bodyData = JSON.parse(options.body as string);
+            // Get the absolute latest tables and schema info from refs
+            const freshTables = callbacksRef.current.getLatestTables();
+            const schemaInfo = callbacksRef.current.getSchemaInfo();
+
+            bodyData.schema = freshTables;
+            bodyData.schemaVersion = schemaInfo.version;
+            bodyData.schemaHash = schemaInfo.hash;
+
+            // Remember which version we sent so we can validate responses
+            sentSchemaVersionRef.current = schemaInfo.version;
+
+            console.log(
+              '[Transport] Sending fresh schema:',
+              schemaInfo.tableCount,
+              'tables, version:',
+              schemaInfo.version,
+            );
+            options = {
+              ...options,
+              body: JSON.stringify(bodyData),
+            };
+          } catch (e) {
+            console.error('[Transport] Failed to inject fresh schema:', e);
+          }
+        }
+
         const response = await fetch(url, options);
 
         if (!response.body) {
@@ -388,7 +469,7 @@ export function AssistantSidebar({
     openaiApiKey,
     googleModel,
     openaiModel,
-    listOfTables,
+    // Note: removed listOfTables dependency - we now get fresh tables at request time
   ]);
 
   // Create useChat instance with transport
@@ -683,10 +764,18 @@ export function AssistantSidebar({
   return (
     <div
       className={cn(
-        'fixed inset-y-0 right-0 z-[60] w-[400px] min-w-[320px] max-w-[90vw] bg-background border-l shadow-2xl flex flex-col sm:max-w-[50vw] transition-transform duration-300',
+        'fixed inset-y-0 right-0 z-[60] bg-background border-l shadow-2xl flex flex-col transition-transform duration-300',
         isOpen ? 'translate-x-0' : 'translate-x-full',
       )}
+      style={{ width: `${width}px` }}
     >
+      {/* Resize Handle */}
+      <ResizeHandle
+        side="left"
+        isResizing={isResizing}
+        onMouseDown={handleMouseDown}
+        onDoubleClick={resetWidth}
+      />
       <AssistantRuntimeProvider runtime={runtime}>
         <MessageTracker onMessagesChange={handleMessagesChange}>
           <TooltipProvider>
