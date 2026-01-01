@@ -1444,20 +1444,11 @@ export const useStore = create<AppState>((set, get) => {
 
     updateEnumType: (enumKey, values) => {
       const state = get();
-      console.log('[updateEnumType] Called with enumKey:', enumKey);
-      console.log(
-        '[updateEnumType] Available enumTypes keys:',
-        Object.keys(state.enumTypes),
-      );
-
       let existingEnum = state.enumTypes[enumKey];
       let actualKey = enumKey;
 
       // If exact key not found, try to find by name (fallback for schema prefix mismatch)
       if (!existingEnum) {
-        console.log(
-          '[updateEnumType] Exact key not found, searching by name...',
-        );
         const enumName = enumKey.includes('.')
           ? enumKey.split('.').pop()!
           : enumKey;
@@ -1466,16 +1457,11 @@ export const useStore = create<AppState>((set, get) => {
         );
         if (foundEntry) {
           [actualKey, existingEnum] = foundEntry;
-          console.log('[updateEnumType] Found by name with key:', actualKey);
         }
       }
 
       // If enum still not found, create it and update all columns that reference it
       if (!existingEnum) {
-        console.log(
-          '[updateEnumType] Enum not found in store, creating new enum type and updating columns',
-        );
-
         // Determine schema and name from the key
         const hasSchema = enumKey.includes('.');
         const schema = hasSchema ? enumKey.split('.')[0] : undefined;

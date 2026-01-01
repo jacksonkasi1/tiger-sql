@@ -361,26 +361,12 @@ export function TableCollapsible({ tableId }: TableCollapsibleProps) {
 
                     // Handle saving enum values
                     const handleSaveEnumValues = (newValues: string[]) => {
-                      console.log(
-                        '[TableCollapsible.handleSaveEnumValues] Called with:',
-                        {
-                          newValues,
-                          enumTypeName: column.enumTypeName,
-                          columnName: column.title,
-                        },
-                      );
                       if (column.enumTypeName) {
-                        console.log(
-                          '[TableCollapsible.handleSaveEnumValues] Calling updateEnumType',
-                        );
                         // Update the global enum type (will create if doesn't exist)
                         updateEnumType(column.enumTypeName, newValues);
                         // Also update the column's enumValues for consistency
                         updateColumn(tableId, index, { enumValues: newValues });
                       } else {
-                        console.log(
-                          '[TableCollapsible.handleSaveEnumValues] Calling updateColumn (no enumTypeName)',
-                        );
                         updateColumn(tableId, index, { enumValues: newValues });
                       }
                     };
