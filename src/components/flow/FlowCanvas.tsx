@@ -282,6 +282,7 @@ function FlowCanvasInner() {
   const {
     tables,
     updateTablePosition,
+    setTablePositions,
     updateColumn,
     getEdgeRelationship,
     setEdgeRelationship,
@@ -363,6 +364,16 @@ function FlowCanvasInner() {
   useEffect(() => {
     // Use setTimeout(0) to yield to browser rendering, preventing UI freeze
     const timeoutId = setTimeout(() => {
+      // Check INSIDE the timeout to get the latest ref value, not a stale closure
+      // This prevents the race condition where position updates trigger table changes
+      // which then overwrite the layout positions
+      if (isApplyingLayoutRef.current) {
+        debugLog.log(
+          '[FlowCanvas] Skipping tables-to-nodes conversion - layout in progress',
+        );
+        return;
+      }
+
       debugLog.log('[FlowCanvas] Converting tables to nodes/edges...', {
         tableCount: Object.keys(tables).length,
         visibleSchemasSize: visibleSchemas.size,
@@ -474,15 +485,20 @@ function FlowCanvasInner() {
             );
             setNodes(layoutedNodes);
 
-            // Update positions in store
+            // Update positions in store using batch update
+            const positions: Record<string, { x: number; y: number }> = {};
             layoutedNodes.forEach((node) => {
-              updateTablePosition(node.id, node.position.x, node.position.y);
+              positions[node.id] = { x: node.position.x, y: node.position.y };
             });
+            setTablePositions(positions);
 
             // Fit view after layout
             setTimeout(() => {
               reactFlowRef.current.fitView({ padding: 0.2, duration: 400 });
-              isApplyingLayoutRef.current = false;
+              // Keep the flag set for a bit longer to prevent any late table->node conversions
+              setTimeout(() => {
+                isApplyingLayoutRef.current = false;
+              }, 200);
             }, 50);
 
             pendingLayoutRef.current = false;
@@ -501,7 +517,7 @@ function FlowCanvasInner() {
     setNodes,
     setEdges,
     getEdgeRelationship,
-    updateTablePosition,
+    setTablePositions,
   ]);
 
   // Listen for layout trigger from store
@@ -530,10 +546,12 @@ function FlowCanvasInner() {
           });
           setNodes(layoutedNodes);
 
-          // Update positions in store
+          // Update positions in store using batch update
+          const positions: Record<string, { x: number; y: number }> = {};
           layoutedNodes.forEach((node) => {
-            updateTablePosition(node.id, node.position.x, node.position.y);
+            positions[node.id] = { x: node.position.x, y: node.position.y };
           });
+          setTablePositions(positions);
 
           // Fit view after layout - retry if ReactFlow isn't ready
           let retryCount = 0;
@@ -541,14 +559,19 @@ function FlowCanvasInner() {
           const attemptFitView = () => {
             if (reactFlowRef.current?.fitView) {
               reactFlowRef.current.fitView({ padding: 0.2, duration: 400 });
-              isApplyingLayoutRef.current = false;
+              // Keep the flag set for a bit longer to prevent any late table->node conversions
+              setTimeout(() => {
+                isApplyingLayoutRef.current = false;
+              }, 200);
             } else if (retryCount < maxRetries) {
               retryCount++;
               // Retry after a short delay if ReactFlow isn't ready yet
               setTimeout(attemptFitView, 50);
             } else {
               // Max retries reached, stop trying
-              isApplyingLayoutRef.current = false;
+              setTimeout(() => {
+                isApplyingLayoutRef.current = false;
+              }, 200);
             }
           };
           setTimeout(attemptFitView, 50);
@@ -561,7 +584,7 @@ function FlowCanvasInner() {
         pendingLayoutRef.current = true;
       }
     }
-  }, [layoutTrigger, nodes, edges, setNodes, updateTablePosition]);
+  }, [layoutTrigger, nodes, edges, setNodes, setTablePositions]);
 
   // Listen for fit view trigger from store
   useEffect(() => {

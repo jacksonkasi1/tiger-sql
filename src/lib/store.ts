@@ -48,6 +48,9 @@ interface AppState {
     meta?: { enumTypes?: Record<string, EnumTypeDefinition> },
   ) => void;
   updateTablePosition: (tableId: string, x: number, y: number) => void;
+  setTablePositions: (
+    updates: Record<string, { x: number; y: number }>,
+  ) => void;
   updateTableName: (tableId: string, newName: string) => void;
   updateTableColor: (tableId: string, color: string) => void;
   updateTableComment: (tableId: string, comment: string) => void;
@@ -514,6 +517,32 @@ export const useStore = create<AppState>((set, get) => {
 
       // Push history AFTER state change with the resulting state
       get().pushHistory(HistoryLabels.applySQLChanges());
+      get().saveToLocalStorage();
+    },
+
+    setTablePositions: (updates) => {
+      set((state) => {
+        const newTables = { ...state.tables };
+        let hasChanges = false;
+
+        Object.entries(updates).forEach(([id, pos]) => {
+          if (newTables[id]) {
+            newTables[id] = {
+              ...newTables[id],
+              position: pos,
+            };
+            hasChanges = true;
+          }
+        });
+
+        if (!hasChanges) return state;
+
+        return {
+          tables: newTables,
+        };
+      });
+
+      get().pushHistory(HistoryLabels.autoArrange());
       get().saveToLocalStorage();
     },
 
