@@ -434,6 +434,37 @@ export async function POST(req: Request) {
       return record;
     };
 
+    // Helper to resolve table ID from name if needed
+    const resolveTableId = (idOrName: string): string => {
+      // If direct match, return it
+      if (schemaState[idOrName]) return idOrName;
+
+      // Try case-insensitive match on keys
+      const lowercaseId = idOrName.toLowerCase();
+      const directKeyMatch = Object.keys(schemaState).find(
+        (k) => k.toLowerCase() === lowercaseId,
+      );
+      if (directKeyMatch) return directKeyMatch;
+
+      // Try finding by title (case-insensitive)
+      // Also handle schema.table format by checking the name part
+      const cleanName = idOrName.includes('.')
+        ? idOrName.split('.').pop()!
+        : idOrName;
+
+      const foundEntry = Object.entries(schemaState).find(([key, table]) => {
+        return (
+          table.title === idOrName ||
+          table.title === cleanName ||
+          table.title.toLowerCase() === idOrName.toLowerCase() ||
+          table.title.toLowerCase() === cleanName.toLowerCase() ||
+          key.split('.').pop()?.toLowerCase() === cleanName.toLowerCase()
+        );
+      });
+
+      return foundEntry ? foundEntry[0] : idOrName;
+    };
+
     // Create atomic tools
     const createAtomicTools = () => ({
       listSchemas: tool({
@@ -527,11 +558,14 @@ export async function POST(req: Request) {
           'Get detailed information about a specific table including all columns.',
         inputSchema: getTableParams,
         execute: async ({ tableId }) => {
+          const resolvedId = resolveTableId(tableId);
+
           if (abortController.signal.aborted) {
             return { ok: false, message: 'Operation cancelled' };
           }
 
-          const table = schemaState[tableId];
+          const table = schemaState[resolvedId];
+
           if (!table) {
             return {
               ok: false,
@@ -601,11 +635,16 @@ export async function POST(req: Request) {
           'Drop a single table from the workspace. Check for dependencies first.',
         inputSchema: dropTableParams,
         execute: async ({ tableId }) => {
+          const resolvedId = resolveTableId(tableId);
+
           if (abortController.signal.aborted) {
             return { ok: false, message: 'Operation cancelled' };
           }
 
-          if (!schemaState[tableId]) {
+          const table = schemaState[resolvedId];
+          const userFacingTableName = table?.title ?? tableId;
+
+          if (!table) {
             return {
               ok: false,
               message: `Table '${tableId}' not found`,
@@ -613,22 +652,22 @@ export async function POST(req: Request) {
           }
 
           operationCount++;
-          const beforeState = cloneTable(schemaState[tableId]);
+          const beforeState = cloneTable(table);
 
-          delete schemaState[tableId];
+          delete schemaState[resolvedId];
 
           // Record operation for undo
           recordOperation(
             'dropTable',
-            tableId,
+            resolvedId,
             beforeState,
             null,
-            `Dropped table '${tableId}'`,
+            `Dropped table '${userFacingTableName}'`,
           );
 
           return {
             ok: true,
-            message: `Dropped table '${tableId}'`,
+            message: `Dropped table '${userFacingTableName}'`,
             remainingTables: Object.keys(schemaState).length,
           };
         },
@@ -638,15 +677,17 @@ export async function POST(req: Request) {
         description: 'Rename a table. Updates the table identifier and title.',
         inputSchema: renameTableParams,
         execute: async ({ fromTableId, toTableId }) => {
+          const resolvedFromId = resolveTableId(fromTableId);
+
           if (abortController.signal.aborted) {
             return { ok: false, message: 'Operation cancelled' };
           }
 
-          const source = schemaState[fromTableId];
+          const source = schemaState[resolvedFromId];
           if (!source) {
             return {
               ok: false,
-              message: `Table '${fromTableId}' not found`,
+              message: `Source table '${fromTableId}' not found`,
             };
           }
 
@@ -737,11 +778,15 @@ export async function POST(req: Request) {
           'Add a single column to a table. Call multiple times for multiple columns.',
         inputSchema: addColumnParams,
         execute: async ({ tableId, column }) => {
+          const resolvedId = resolveTableId(tableId);
+
           if (abortController.signal.aborted) {
             return { ok: false, message: 'Operation cancelled' };
           }
 
-          const table = schemaState[tableId];
+          const table = schemaState[resolvedId];
+          const userFacingTableName = table?.title ?? tableId;
+
           if (!table) {
             return {
               ok: false,
@@ -758,7 +803,7 @@ export async function POST(req: Request) {
           if (existingColumns.some((c) => c.title === normalizedColumn.title)) {
             return {
               ok: false,
-              message: `Column '${normalizedColumn.title}' already exists in '${tableId}'`,
+              message: `Column '${normalizedColumn.title}' already exists in table '${userFacingTableName}'`,
             };
           }
 
@@ -767,15 +812,15 @@ export async function POST(req: Request) {
           // Record operation for undo
           recordOperation(
             'addColumn',
-            tableId,
+            resolvedId,
             beforeState,
             table,
-            `Added column '${normalizedColumn.title}' to '${tableId}'`,
+            `Added column '${normalizedColumn.title}' to table '${userFacingTableName}'`,
           );
 
           return {
             ok: true,
-            message: `Added column '${normalizedColumn.title}' to '${tableId}'`,
+            message: `Added column '${normalizedColumn.title}' to table '${userFacingTableName}'`,
             column: normalizedColumn.title,
             tableColumnCount: table.columns.length,
           };
@@ -786,11 +831,15 @@ export async function POST(req: Request) {
         description: 'Remove a single column from a table.',
         inputSchema: dropColumnParams,
         execute: async ({ tableId, columnName }) => {
+          const resolvedId = resolveTableId(tableId);
+
           if (abortController.signal.aborted) {
             return { ok: false, message: 'Operation cancelled' };
           }
 
-          const table = schemaState[tableId];
+          const table = schemaState[resolvedId];
+          const userFacingTableName = table?.title ?? tableId;
+
           if (!table) {
             return {
               ok: false,
@@ -809,22 +858,22 @@ export async function POST(req: Request) {
           if (table.columns.length === originalLength) {
             return {
               ok: false,
-              message: `Column '${columnName}' not found in '${tableId}'`,
+              message: `Column '${columnName}' not found in table '${userFacingTableName}'`,
             };
           }
 
           // Record operation for undo
           recordOperation(
             'dropColumn',
-            tableId,
+            resolvedId,
             beforeState,
             table,
-            `Dropped column '${columnName}' from '${tableId}'`,
+            `Dropped column '${columnName}' from table '${userFacingTableName}'`,
           );
 
           return {
             ok: true,
-            message: `Dropped column '${columnName}' from '${tableId}'`,
+            message: `Dropped column '${columnName}' from table '${userFacingTableName}'`,
             tableColumnCount: table.columns.length,
           };
         },
@@ -835,11 +884,15 @@ export async function POST(req: Request) {
           'Modify properties of a single column. Can add/change/remove fk property.',
         inputSchema: alterColumnParams,
         execute: async ({ tableId, columnName, patch }) => {
+          const resolvedId = resolveTableId(tableId);
+
           if (abortController.signal.aborted) {
             return { ok: false, message: 'Operation cancelled' };
           }
 
-          const table = schemaState[tableId];
+          const table = schemaState[resolvedId];
+          const userFacingTableName = table?.title ?? tableId;
+
           if (!table) {
             return {
               ok: false,
@@ -857,7 +910,7 @@ export async function POST(req: Request) {
           if (columnIndex === -1) {
             return {
               ok: false,
-              message: `Column '${columnName}' not found in '${tableId}'`,
+              message: `Column '${columnName}' not found in table '${userFacingTableName}'`,
             };
           }
 
@@ -882,10 +935,10 @@ export async function POST(req: Request) {
           // Record operation for undo
           recordOperation(
             'alterColumn',
-            tableId,
+            resolvedId,
             beforeState,
             table,
-            `Altered column '${columnName}' in '${tableId}'`,
+            `Altered column '${columnName}' in table '${userFacingTableName}'`,
           );
 
           const changedProps = Object.keys(patch).filter(
@@ -894,7 +947,7 @@ export async function POST(req: Request) {
 
           return {
             ok: true,
-            message: `Updated column '${columnName}' in '${tableId}'`,
+            message: `Updated column '${columnName}' in table '${userFacingTableName}'`,
             changes: changedProps,
           };
         },
@@ -910,11 +963,16 @@ export async function POST(req: Request) {
           referencesTable,
           referencesColumn,
         }) => {
+          const resolvedId = resolveTableId(tableId);
+          const resolvedRefId = resolveTableId(referencesTable);
+
           if (abortController.signal.aborted) {
             return { ok: false, message: 'Operation cancelled' };
           }
 
-          const table = schemaState[tableId];
+          const table = schemaState[resolvedId];
+          const userFacingTableName = table?.title ?? tableId;
+
           if (!table) {
             return {
               ok: false,
@@ -929,12 +987,13 @@ export async function POST(req: Request) {
           if (columnIndex === -1) {
             return {
               ok: false,
-              message: `Column '${columnName}' not found in '${tableId}'`,
+              message: `Column '${columnName}' not found in table '${userFacingTableName}'`,
             };
           }
 
           // Check if referenced table exists
-          if (!schemaState[referencesTable]) {
+          const refTable = schemaState[resolvedRefId];
+          if (!refTable) {
             return {
               ok: false,
               message: `Referenced table '${referencesTable}' not found. Create it first.`,
@@ -944,7 +1003,8 @@ export async function POST(req: Request) {
           operationCount++;
           const beforeState = cloneTable(table);
 
-          const fkValue = `${referencesTable}.${referencesColumn}`;
+          // Use title for FK reference to maintain consistency
+          const fkValue = `${refTable.title}.${referencesColumn}`;
           table.columns![columnIndex] = {
             ...table.columns![columnIndex],
             fk: fkValue,
@@ -953,15 +1013,15 @@ export async function POST(req: Request) {
           // Record operation for undo
           recordOperation(
             'alterColumn',
-            tableId,
+            resolvedId,
             beforeState,
             table,
-            `Set FK on '${tableId}.${columnName}' → '${fkValue}'`,
+            `Set FK on '${userFacingTableName}.${columnName}' → '${fkValue}'`,
           );
 
           return {
             ok: true,
-            message: `Set foreign key: ${tableId}.${columnName} → ${fkValue}`,
+            message: `Set foreign key: ${userFacingTableName}.${columnName} → ${fkValue}`,
             column: columnName,
             references: fkValue,
           };
@@ -972,11 +1032,15 @@ export async function POST(req: Request) {
         description: 'Remove a foreign key relationship from a column.',
         inputSchema: removeForeignKeyParams,
         execute: async ({ tableId, columnName }) => {
+          const resolvedId = resolveTableId(tableId);
+
           if (abortController.signal.aborted) {
             return { ok: false, message: 'Operation cancelled' };
           }
 
-          const table = schemaState[tableId];
+          const table = schemaState[resolvedId];
+          const userFacingTableName = table?.title ?? tableId;
+
           if (!table) {
             return {
               ok: false,
@@ -991,7 +1055,7 @@ export async function POST(req: Request) {
           if (columnIndex === -1) {
             return {
               ok: false,
-              message: `Column '${columnName}' not found in '${tableId}'`,
+              message: `Column '${columnName}' not found in table '${userFacingTableName}'`,
             };
           }
 
@@ -1014,15 +1078,15 @@ export async function POST(req: Request) {
           // Record operation for undo
           recordOperation(
             'alterColumn',
-            tableId,
+            resolvedId,
             beforeState,
             table,
-            `Removed FK from '${tableId}.${columnName}'`,
+            `Removed FK from '${userFacingTableName}.${columnName}'`,
           );
 
           return {
             ok: true,
-            message: `Removed foreign key from ${tableId}.${columnName} (was: ${currentFk})`,
+            message: `Removed foreign key from ${userFacingTableName}.${columnName} (was: ${currentFk})`,
             column: columnName,
             previousFk: currentFk,
           };

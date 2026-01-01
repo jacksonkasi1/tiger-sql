@@ -199,21 +199,21 @@ export function AssistantSidebar({
 
   // Get current schema for the API
   const listOfTables = useMemo(() => {
-    const authUserTable = {
-      title: 'users',
-      columns: [
-        { title: 'id', format: 'uuid', type: 'string' },
-        { title: 'email', format: 'email', type: 'string' },
-      ],
+    // Return tables object map to preserve IDs and state on server round-trip
+    if (Object.keys(tables).length > 0) {
+      return tables;
+    }
+
+    // Fallback for empty state
+    return {
+      'users-default-id': {
+        title: 'users',
+        columns: [
+          { title: 'id', format: 'uuid', type: 'string' },
+          { title: 'email', format: 'email', type: 'string' },
+        ],
+      },
     };
-    const hasRealTables = Object.keys(tables).length > 0;
-    const tablesList = hasRealTables
-      ? Object.values(tables).map((t) => ({
-          title: t.title,
-          columns: t.columns,
-        }))
-      : [authUserTable];
-    return tablesList;
   }, [tables]);
 
   // Ref to store the latest callbacks to avoid stale closures
@@ -236,12 +236,28 @@ export function AssistantSidebar({
     switch (type) {
       case 'data-tables-batch': {
         const batchData = data as StreamingTablesBatch;
-        if (batchData.tables && Object.keys(batchData.tables).length > 0) {
-          updateTablesFromAI(batchData.tables);
-          if (batchData.isComplete) {
-            toast.success('Schema Updated', {
-              description: `Updated ${Object.keys(batchData.tables).length} tables`,
-            });
+        // Always apply table updates when isComplete is true (final state)
+        // or when there are tables to update (intermediate updates)
+        if (batchData.tables !== undefined) {
+          const tableCount = Object.keys(batchData.tables).length;
+
+          // Apply updates for:
+          // 1. Final complete state (even if empty - e.g., all tables dropped)
+          // 2. Intermediate updates with actual tables
+          if (batchData.isComplete || tableCount > 0) {
+            updateTablesFromAI(batchData.tables);
+
+            if (batchData.isComplete) {
+              if (tableCount > 0) {
+                toast.success('Schema Updated', {
+                  description: `Updated ${tableCount} tables`,
+                });
+              } else {
+                toast.success('Schema Cleared', {
+                  description: 'All tables have been removed',
+                });
+              }
+            }
           }
         }
         break;
@@ -290,13 +306,50 @@ export function AssistantSidebar({
         // Create a transform stream to intercept data parts
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = '';
 
         const stream = new ReadableStream({
           async start(controller) {
+            const dispatchDataParts = (payload: any) => {
+              const items = Array.isArray(payload) ? payload : [payload];
+              for (const item of items) {
+                if (item && typeof item === 'object' && 'type' in item) {
+                  const partType = item.type as string;
+                  if (partType.startsWith('data-')) {
+                    handleDataPartRef.current(partType, item.data);
+                  }
+                }
+              }
+            };
+
+            const processLine = (line: string) => {
+              const trimmed = line.trim();
+              if (!trimmed) return;
+
+              let jsonStr = '';
+              if (trimmed.startsWith('data: ')) {
+                jsonStr = trimmed.slice(6);
+                if (jsonStr === '[DONE]') return;
+              } else if (trimmed.startsWith('2:') || trimmed.startsWith('g:')) {
+                jsonStr = trimmed.slice(2);
+              }
+
+              if (jsonStr) {
+                try {
+                  dispatchDataParts(JSON.parse(jsonStr));
+                } catch {
+                  // Skip invalid JSON
+                }
+              }
+            };
+
             try {
               while (true) {
                 const { done, value } = await reader.read();
                 if (done) {
+                  if (buffer) {
+                    processLine(buffer);
+                  }
                   controller.close();
                   break;
                 }
@@ -306,31 +359,14 @@ export function AssistantSidebar({
 
                 // Also parse and handle data parts
                 const text = decoder.decode(value, { stream: true });
-                const lines = text.split('\n');
+                buffer += text;
+                const lines = buffer.split('\n');
+
+                // Keep the last part in buffer as it might be incomplete
+                buffer = lines.pop() || '';
 
                 for (const line of lines) {
-                  // Look for data-* type lines (AI SDK stream format)
-                  if (line.startsWith('g:')) {
-                    try {
-                      // Parse the JSON after "g:"
-                      const jsonStr = line.slice(2);
-                      const parsed = JSON.parse(jsonStr);
-
-                      // Check if it's a data part
-                      if (
-                        parsed &&
-                        typeof parsed === 'object' &&
-                        'type' in parsed
-                      ) {
-                        const partType = parsed.type as string;
-                        if (partType.startsWith('data-')) {
-                          handleDataPartRef.current(partType, parsed.data);
-                        }
-                      }
-                    } catch {
-                      // Not valid JSON, skip
-                    }
-                  }
+                  processLine(line);
                 }
               }
             } catch (error) {
