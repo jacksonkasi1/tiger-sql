@@ -24,6 +24,9 @@
   </p>
 
   <p align="center">
+    <a href="https://github.com/sponsors/jacksonkasi1">
+      <img src="https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-pink?style=social&logo=github" alt="Sponsor">
+    </a>
     <a href="https://github.com/jacksonkasi1/tiger-sql/stargazers">
       <img src="https://img.shields.io/github/stars/jacksonkasi1/tiger-sql?style=social" alt="Stars">
     </a>
@@ -414,14 +417,6 @@ If you find Tiger SQL helpful, consider supporting its development:
 <div align="center">
   <a href="https://github.com/sponsors/jacksonkasi1">
     <img src="https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-pink?style=for-the-badge&logo=github" alt="GitHub Sponsors">
-  </a>
-</div>
-
-<br />
-
-<div align="center">
-  <a href="https://github.com/sponsors/jacksonkasi1">
-    <img src="https://github.com/sponsors/jacksonkasi1/card" title="Sponsor jacksonkasi1" height="225" width="600" style="border: 0;">
   </a>
 </div>
 
