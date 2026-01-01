@@ -424,7 +424,7 @@ export function Settings({
 
             <div className="flex items-center justify-center gap-4 mt-2">
               <a
-                href="https://github.com/zernonia/supabase-schema"
+                href="https://github.com/jacksonkasi1/tiger-sql"
                 target="_blank"
                 rel="noreferrer"
                 className="text-muted-foreground hover:text-foreground transition-colors"
@@ -471,7 +471,7 @@ export function Settings({
                       <a
                         className="underline hover:text-primary"
                         target="_blank"
-                        href="https://github.com/zernonia/supabase-schema#-instructions"
+                        href="https://github.com/jacksonkasi1/tiger-sql#-instructions"
                         rel="noreferrer"
                       >
                         here

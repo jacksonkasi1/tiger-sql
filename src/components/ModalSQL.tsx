@@ -123,7 +123,7 @@ export function ModalSQL({ open, onClose }: ModalSQLProps) {
           <DialogDescription>
             There might be some issues with the exported code. You may submit{' '}
             <a
-              href="https://github.com/zernonia/supabase-schema/issues"
+              href="https://github.com/jacksonkasi1/tiger-sql/issues"
               target="_blank"
               className="underline hover:text-primary"
               rel="noreferrer"
@@ -134,9 +134,7 @@ export function ModalSQL({ open, onClose }: ModalSQLProps) {
           </DialogDescription>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto">
-          <pre className="bg-muted text-sm rounded-md p-4">
-            {exportedCode}
-          </pre>
+          <pre className="bg-muted text-sm rounded-md p-4">{exportedCode}</pre>
         </div>
       </DialogContent>
     </Dialog>

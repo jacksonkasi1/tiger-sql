@@ -153,8 +153,12 @@ export function ModalTypes({ open, onClose }: ModalTypesProps) {
         code += ': ';
 
         // Handle enum types
-        if (column.format === 'enum' && column.enumValues && column.enumValues.length > 0) {
-          const enumValues = column.enumValues.map(v => `'${v}'`).join(' | ');
+        if (
+          column.format === 'enum' &&
+          column.enumValues &&
+          column.enumValues.length > 0
+        ) {
+          const enumValues = column.enumValues.map((v) => `'${v}'`).join(' | ');
           code += enumValues;
         } else {
           code += referenceTable[column.format] || 'any // type unknown';
@@ -162,7 +166,8 @@ export function ModalTypes({ open, onClose }: ModalTypesProps) {
 
         if (column.pk) code += '   /* primary key */';
         if (column.fk) code += `   /* foreign key to ${column.fk} */`;
-        if (column.enumTypeName) code += `   /* enum: ${column.enumTypeName} */`;
+        if (column.enumTypeName)
+          code += `   /* enum: ${column.enumTypeName} */`;
         code += `;\n`;
       });
 
@@ -193,7 +198,7 @@ export function ModalTypes({ open, onClose }: ModalTypesProps) {
           <DialogDescription>
             There might be some issues with the exported code. You may submit{' '}
             <a
-              href="https://github.com/zernonia/supabase-schema/issues"
+              href="https://github.com/jacksonkasi1/tiger-sql/issues"
               target="_blank"
               className="underline hover:text-primary"
               rel="noreferrer"
@@ -204,9 +209,7 @@ export function ModalTypes({ open, onClose }: ModalTypesProps) {
           </DialogDescription>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto">
-          <pre className="bg-muted text-sm rounded-md p-4">
-            {exportedCode}
-          </pre>
+          <pre className="bg-muted text-sm rounded-md p-4">{exportedCode}</pre>
         </div>
       </DialogContent>
     </Dialog>
