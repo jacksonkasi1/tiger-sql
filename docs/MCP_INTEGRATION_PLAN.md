@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the development plan for integrating Model Context Protocol (MCP) into the Supabase Schema application. The goal is to leverage **pg-aiguide** (Timescale's PostgreSQL MCP server) to provide the AI agent with up-to-date PostgreSQL knowledge, best practices, and schema design patterns.
+This document outlines the development plan for integrating Model Context Protocol (MCP) into the Tiger SQL application. The goal is to leverage **pg-aiguide** (Timescale's PostgreSQL MCP server) to provide the AI agent with up-to-date PostgreSQL knowledge, best practices, and schema design patterns.
 
 ### Key Resources
 

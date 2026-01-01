@@ -8,10 +8,10 @@ export const metadata: Metadata = {
   metadataBase: new URL(
     process.env.NEXT_PUBLIC_BASE_URL || 'https://supabase-schema.vercel.app',
   ),
-  title: 'Supabase Schema',
+  title: 'Tiger SQL',
   description: 'Visualize your Supabase database schema',
   openGraph: {
-    title: 'Supabase Schema',
+    title: 'Tiger SQL',
     description: 'Visualize your Supabase database schema',
     images: ['/og.png'],
   },

@@ -1,6 +1,6 @@
 # Memory Leak Testing Guide
 
-This guide explains how to detect and fix memory leaks in the Supabase Schema Visualizer using multiple tools.
+This guide explains how to detect and fix memory leaks in the Tiger SQL Visualizer using multiple tools.
 
 ## 🔧 Tools Overview
 

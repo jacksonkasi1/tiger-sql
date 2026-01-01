@@ -413,11 +413,11 @@ export function Settings({
                   src="/logo.svg"
                   width={128}
                   height={128}
-                  alt="Supabase Schema Logo"
+                  alt="Tiger SQL Logo"
                 />
               </div>
               <SheetTitle className="text-3xl font-bold bg-gradient-to-r from-green-500 to-green-400 bg-clip-text text-transparent">
-                Supabase Schema
+                Tiger SQL
               </SheetTitle>
               <SheetDescription>Open Source • LocalStorage</SheetDescription>
             </SheetHeader>
@@ -478,7 +478,7 @@ export function Settings({
                       </a>
                     </li>
                     <li>Paste the URL and anon key below</li>
-                    <li>Enjoy the Supabase Schema</li>
+                    <li>Enjoy Tiger SQL</li>
                   </ol>
                 ) : (
                   <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
