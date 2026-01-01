@@ -7,9 +7,7 @@
   </a>
 </div>
 
-# Tiger SQL
-
-<h1> Tiger SQL: AI-Powered PostgreSQL Schema Visualizer & Designer</h1>
+<h1 align="center" >Tiger SQL</h1>
 
   <p align="center">
     <strong>PostgreSQL Schema Visualizer & Designer with AI-Powered Assistance</strong>
