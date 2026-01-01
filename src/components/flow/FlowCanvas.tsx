@@ -16,7 +16,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { useStore } from '@/lib/store';
 import { ViewNode } from './ViewNode';
-import { ModernTableNode } from './ModernTableNode';
+import { SmartTableNode } from './SmartTableNode';
 import { CustomEdge } from './CustomEdge';
 import { RelationshipSelector } from './RelationshipSelector';
 import {
@@ -36,7 +36,7 @@ import { cn } from '@/lib/utils';
 import { debugLog } from '@/lib/debug';
 
 const nodeTypes = {
-  table: ModernTableNode,
+  table: SmartTableNode,
   view: ViewNode,
 };
 
