@@ -95,6 +95,88 @@ function setStorageTimestamp(): void {
   localStorage.setItem(STORAGE_TIMESTAMP_KEY, Date.now().toString());
 }
 
+// ============================================================================
+// Internal Helpers
+// ============================================================================
+
+/**
+ * Synchronizes enum values across all columns that reference a specific enum type.
+ */
+const syncEnumValuesToColumns = (
+  tables: TableState,
+  keysToMatch: string[],
+  newValues: string[],
+): TableState => {
+  const updatedTables = { ...tables };
+  Object.entries(updatedTables).forEach(([tableId, table]) => {
+    if (!table.columns) return;
+    const updatedColumns = table.columns.map((col) => {
+      if (col.enumTypeName && keysToMatch.includes(col.enumTypeName)) {
+        return {
+          ...col,
+          enumValues: newValues,
+        };
+      }
+      return col;
+    });
+    updatedTables[tableId] = {
+      ...table,
+      columns: updatedColumns,
+    };
+  });
+  return updatedTables;
+};
+
+/**
+ * Resolves an enum type and its key from the current store state.
+ */
+const resolveEnumEntry = (
+  enumTypes: Record<string, EnumTypeDefinition>,
+  enumKey: string,
+): { actualKey: string; existingEnum: EnumTypeDefinition } | null => {
+  // Try exact match
+  if (enumTypes[enumKey]) {
+    return { actualKey: enumKey, existingEnum: enumTypes[enumKey] };
+  }
+
+  // Try match by name (fallback for schema prefix mismatch)
+  const enumName = enumKey.includes('.') ? enumKey.split('.').pop()! : enumKey;
+  const requestedSchema = enumKey.includes('.')
+    ? enumKey.split('.')[0]
+    : undefined;
+
+  // First, try to find a match in the same schema (if schema was specified)
+  if (requestedSchema) {
+    const schemaPrefixedEntry = Object.entries(enumTypes).find(
+      ([key, def]) =>
+        key.startsWith(`${requestedSchema}.`) && def.name === enumName,
+    );
+    if (schemaPrefixedEntry) {
+      console.warn(
+        `[updateEnumType] Enum key "${enumKey}" not found, resolved to "${schemaPrefixedEntry[0]}" (schema-prefixed match)`,
+      );
+      return {
+        actualKey: schemaPrefixedEntry[0],
+        existingEnum: schemaPrefixedEntry[1],
+      };
+    }
+  }
+
+  // Fall back to any enum with matching name (could match wrong schema)
+  const foundEntry = Object.entries(enumTypes).find(
+    ([key, def]) => def.name === enumName || key.endsWith(`.${enumName}`),
+  );
+
+  if (foundEntry) {
+    console.warn(
+      `[updateEnumType] Enum key "${enumKey}" not found, resolved to "${foundEntry[0]}" (name-only match - potential schema collision)`,
+    );
+    return { actualKey: foundEntry[0], existingEnum: foundEntry[1] };
+  }
+
+  return null;
+};
+
 interface AppState {
   // Modal state
   isModalOpen: boolean;
@@ -128,6 +210,11 @@ interface AppState {
     tableId: string,
     columnIndex: number,
     updates: Partial<Column>,
+  ) => void;
+  saveColumnEnumValues: (
+    tableId: string,
+    columnIndex: number,
+    values: string[],
   ) => void;
   deleteColumn: (tableId: string, columnIndex: number) => void;
   reorderColumns: (tableId: string, oldIndex: number, newIndex: number) => void;
@@ -1444,54 +1531,29 @@ export const useStore = create<AppState>((set, get) => {
 
     updateEnumType: (enumKey, values) => {
       const state = get();
-      let existingEnum = state.enumTypes[enumKey];
-      let actualKey = enumKey;
+      const resolved = resolveEnumEntry(state.enumTypes, enumKey);
 
-      // If exact key not found, try to find by name (fallback for schema prefix mismatch)
-      if (!existingEnum) {
-        const enumName = enumKey.includes('.')
-          ? enumKey.split('.').pop()!
-          : enumKey;
-        const foundEntry = Object.entries(state.enumTypes).find(
-          ([key, def]) => def.name === enumName || key.endsWith(`.${enumName}`),
-        );
-        if (foundEntry) {
-          [actualKey, existingEnum] = foundEntry;
-        }
-      }
-
-      // If enum still not found, create it and update all columns that reference it
-      if (!existingEnum) {
-        // Determine schema and name from the key
+      if (!resolved) {
+        // Create new enum if not found
         const hasSchema = enumKey.includes('.');
         const schema = hasSchema ? enumKey.split('.')[0] : undefined;
         const enumName = hasSchema ? enumKey.split('.').pop()! : enumKey;
 
-        // Create the new enum type
         const newEnumType: EnumTypeDefinition = {
           name: enumName,
           schema,
           values,
         };
 
-        // Update all columns that reference this enum type
-        const updatedTables = { ...state.tables };
-        Object.entries(updatedTables).forEach(([tableId, table]) => {
-          if (!table.columns) return;
-          const updatedColumns = table.columns.map((col) => {
-            if (col.enumTypeName === enumKey) {
-              return {
-                ...col,
-                enumValues: values,
-              };
-            }
-            return col;
-          });
-          updatedTables[tableId] = {
-            ...table,
-            columns: updatedColumns,
-          };
-        });
+        // For robustness, match columns by enumKey, name, or schema-prefixed name
+        const keysToMatch = [enumKey, enumName];
+        if (schema) keysToMatch.push(`${schema}.${enumName}`);
+
+        const updatedTables = syncEnumValuesToColumns(
+          state.tables,
+          keysToMatch,
+          values,
+        );
 
         set({
           enumTypes: {
@@ -1501,15 +1563,15 @@ export const useStore = create<AppState>((set, get) => {
           tables: updatedTables,
         });
 
-        // Push history AFTER state change with the resulting state
         get().pushHistory(HistoryLabels.updateEnum(enumName));
         get().saveToLocalStorage();
         return;
       }
 
+      const { actualKey, existingEnum } = resolved;
       const enumName = existingEnum.name;
 
-      // Update the enum type definition
+      // Update the existing enum type definition
       const updatedEnumTypes = {
         ...state.enumTypes,
         [actualKey]: {
@@ -1518,37 +1580,37 @@ export const useStore = create<AppState>((set, get) => {
         },
       };
 
-      // Update all columns that reference this enum type
-      const updatedTables = { ...state.tables };
-      Object.entries(updatedTables).forEach(([tableId, table]) => {
-        if (!table.columns) return;
-        const updatedColumns = table.columns.map((col) => {
-          if (
-            col.enumTypeName === actualKey ||
-            col.enumTypeName === enumKey ||
-            col.enumTypeName === existingEnum.name
-          ) {
-            return {
-              ...col,
-              enumValues: values,
-            };
-          }
-          return col;
-        });
-        updatedTables[tableId] = {
-          ...table,
-          columns: updatedColumns,
-        };
-      });
+      // Sync all columns referencing this enum
+      const keysToMatch = [actualKey, enumKey, enumName];
+      const updatedTables = syncEnumValuesToColumns(
+        state.tables,
+        keysToMatch,
+        values,
+      );
 
       set({
         enumTypes: updatedEnumTypes,
         tables: updatedTables,
       });
 
-      // Push history AFTER state change with the resulting state
       get().pushHistory(HistoryLabels.updateEnum(enumName));
       get().saveToLocalStorage();
+    },
+
+    saveColumnEnumValues: (tableId, columnIndex, values) => {
+      const state = get();
+      const table = state.tables[tableId];
+      if (!table || !table.columns) return;
+      const column = table.columns[columnIndex];
+      if (!column) return;
+
+      if (column.enumTypeName) {
+        // Global enum update (this also syncs columns internally)
+        get().updateEnumType(column.enumTypeName, values);
+      } else {
+        // Local column update
+        get().updateColumn(tableId, columnIndex, { enumValues: values });
+      }
     },
 
     createEnumType: (name, schema, values) => {

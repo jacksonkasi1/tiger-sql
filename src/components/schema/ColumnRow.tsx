@@ -94,8 +94,13 @@ export function ColumnRow({
   columnIndex,
   isDragOverlay = false,
 }: ColumnRowProps) {
-  const { tables, enumTypes, updateColumn, deleteColumn, updateEnumType } =
-    useStore();
+  const {
+    tables,
+    enumTypes,
+    updateColumn,
+    deleteColumn,
+    saveColumnEnumValues,
+  } = useStore();
   const [typeOpen, setTypeOpen] = useState(false);
   const [fkOpen, setFkOpen] = useState(false);
   const [enumEditorOpen, setEnumEditorOpen] = useState(false);
@@ -172,15 +177,7 @@ export function ColumnRow({
 
   // Handle saving enum values
   const handleSaveEnumValues = (newValues: string[]) => {
-    if (column.enumTypeName) {
-      // Update the global enum type (will create if doesn't exist)
-      updateEnumType(column.enumTypeName, newValues);
-      // Also update the column's enumValues for consistency
-      updateColumn(tableId, columnIndex, { enumValues: newValues });
-    } else {
-      // Update just this column's enum values
-      updateColumn(tableId, columnIndex, { enumValues: newValues });
-    }
+    saveColumnEnumValues(tableId, columnIndex, newValues);
   };
 
   // Check if column is an enum type

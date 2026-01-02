@@ -75,16 +75,6 @@
         @apply bg-background text-foreground antialiased;
     }
 
-    /* Remove default focus outlines */
-    *:focus {
-        outline: none;
-    }
-
-    /* Remove default focus-visible outlines */
-    *:focus-visible {
-        outline: none;
-    }
-
     /* Smooth transitions for interactive elements */
     button,
     a,
