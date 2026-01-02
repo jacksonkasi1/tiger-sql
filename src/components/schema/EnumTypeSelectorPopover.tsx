@@ -153,7 +153,7 @@ export function EnumTypeSelectorPopover({
             <Command className="bg-popover">
               <CommandInput
                 placeholder="Search enum types..."
-                className="h-9 text-sm border-0"
+                className="h-9 text-sm !outline-none !ring-0 !border-0"
               />
               <CommandList className="max-h-[240px]">
                 <CommandEmpty className="py-4 text-sm text-muted-foreground/60 text-center">

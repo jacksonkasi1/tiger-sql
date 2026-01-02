@@ -442,7 +442,7 @@ const EditComposer: FC = () => {
     <MessagePrimitive.Root className="aui-edit-composer-wrapper mx-auto flex w-full max-w-(--thread-max-width) flex-col px-1 py-2">
       <ComposerPrimitive.Root className="aui-edit-composer-root ml-auto flex w-full max-w-[85%] flex-col rounded-xl bg-muted border border-input/50">
         <ComposerPrimitive.Input
-          className="aui-edit-composer-input min-h-10 w-full resize-none bg-transparent p-3 text-foreground text-sm outline-none"
+          className="aui-edit-composer-input min-h-10 w-full resize-none bg-transparent p-3 text-foreground text-sm  !ring-0 !outline-none !border-0"
           autoFocus
         />
         <div className="aui-edit-composer-footer mx-2 mb-2 flex items-center gap-2 self-end">
