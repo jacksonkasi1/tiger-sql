@@ -126,7 +126,7 @@ export function TableCollapsible({ tableId }: TableCollapsibleProps) {
     triggerFocusTable,
     updateTableColor,
     updateTableName,
-    updateEnumType,
+    saveColumnEnumValues,
   } = useStore();
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -361,11 +361,7 @@ export function TableCollapsible({ tableId }: TableCollapsibleProps) {
 
                     // Handle saving enum values
                     const handleSaveEnumValues = (newValues: string[]) => {
-                      if (column.enumTypeName) {
-                        updateEnumType(column.enumTypeName, newValues);
-                      } else {
-                        updateColumn(tableId, index, { enumValues: newValues });
-                      }
+                      saveColumnEnumValues(tableId, index, newValues);
                     };
 
                     return (

@@ -8,7 +8,6 @@ import {
 } from '@/components/ui/hover-card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Search } from 'lucide-react';
 
 interface EnumValuesPopoverProps {
@@ -18,8 +17,8 @@ interface EnumValuesPopoverProps {
   trigger: React.ReactNode;
 }
 
-const MAX_VISIBLE_VALUES = 8;
-const SHOW_SEARCH_THRESHOLD = 10;
+const MAX_VISIBLE_VALUES = 100; // Show all values by default
+const SHOW_SEARCH_THRESHOLD = 15;
 
 export function EnumValuesPopover({
   enumTypeName,
@@ -95,7 +94,7 @@ export function EnumValuesPopover({
         )}
 
         {/* Values List */}
-        <ScrollArea className="max-h-48">
+        <div className="max-h-64 overflow-y-auto">
           <div className="p-2 space-y-1">
             {displayValues.length > 0 ? (
               displayValues.map((value, index) => (
@@ -123,7 +122,7 @@ export function EnumValuesPopover({
               </div>
             )}
           </div>
-        </ScrollArea>
+        </div>
 
         {/* Footer with count */}
         <div className="px-3 py-1.5 border-t border-border/30 bg-muted/20">
