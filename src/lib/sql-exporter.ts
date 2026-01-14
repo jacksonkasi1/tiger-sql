@@ -138,12 +138,8 @@ export function generateSQLSchema(tables: TableState): string {
       }
 
       // Default value
-      if (col.default) {
+      if (col.default !== undefined && col.default !== null && col.default !== '') {
         sql += ` DEFAULT ${col.default}`;
-      } else if (col.format === 'date' || col.format.includes('timestamp')) {
-        sql += ` DEFAULT now()`;
-      } else if (col.required && col.format === 'uuid' && !col.fk) {
-        sql += ` DEFAULT uuid_generate_v4()`;
       }
 
       // Track primary keys and foreign keys for ALTER TABLE statements

@@ -45,6 +45,7 @@ import {
   X,
   Pencil,
   List,
+  Equal,
 } from 'lucide-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -80,6 +81,76 @@ const POSTGRES_TYPES = [
 ];
 
 type IndexType = 'primary_key' | 'unique_key' | 'index' | 'none';
+
+/**
+ * Get type-aware default value suggestions based on column format
+ */
+function getDefaultValueSuggestions(
+  format: string,
+  isEnumColumn: boolean,
+  enumValues: string[],
+  isArray?: boolean,
+): string[] {
+  const formatLower = (format || '').toLowerCase();
+
+  if (isEnumColumn && enumValues.length > 0) {
+    return enumValues.map((v) => `'${v}'`);
+  } else if (formatLower === 'boolean' || formatLower === 'bool') {
+    return ['true', 'false'];
+  } else if (
+    formatLower.includes('timestamp') ||
+    formatLower === 'timestamptz'
+  ) {
+    return ['NOW()', 'CURRENT_TIMESTAMP'];
+  } else if (formatLower === 'date') {
+    return ['CURRENT_DATE', 'NOW()'];
+  } else if (formatLower === 'time') {
+    return ['CURRENT_TIME'];
+  } else if (formatLower === 'uuid') {
+    return ['uuid_generate_v4()', 'gen_random_uuid()'];
+  } else if (
+    formatLower.includes('int') ||
+    formatLower === 'serial' ||
+    formatLower === 'bigserial'
+  ) {
+    return ['0', '1', '-1'];
+  } else if (
+    formatLower.includes('numeric') ||
+    formatLower.includes('decimal') ||
+    formatLower === 'real' ||
+    formatLower.includes('float') ||
+    formatLower === 'double precision'
+  ) {
+    return ['0', '0.0', '1.0'];
+  } else if (formatLower === 'money') {
+    return ['0.00', "'$0.00'"];
+  } else if (
+    formatLower === 'text' ||
+    formatLower.includes('varchar') ||
+    formatLower.includes('char')
+  ) {
+    return ["''"];
+  } else if (formatLower === 'json' || formatLower === 'jsonb') {
+    return ["'{}'", "'[]'", 'NULL'];
+  } else if (formatLower === 'bytea') {
+    return ["'\\x'", "''"];
+  } else if (formatLower === 'interval') {
+    return ["'0'", "'1 day'", "'1 hour'"];
+  } else if (formatLower === 'inet' || formatLower === 'cidr') {
+    return ["'0.0.0.0'", "'::1'"];
+  } else if (
+    formatLower === 'point' ||
+    formatLower === 'line' ||
+    formatLower === 'polygon' ||
+    formatLower === 'geometry'
+  ) {
+    return ["'(0,0)'"];
+  } else if (formatLower.includes('[]') || isArray) {
+    return ["'{}'", 'ARRAY[]'];
+  } else {
+    return ['NULL'];
+  }
+}
 
 interface ColumnRowProps {
   tableId: string;
@@ -349,6 +420,22 @@ export function ColumnRow({
 
       {/* End Controls - Compact like DrawSQL */}
       <div className="flex items-center gap-0.5 shrink-0">
+        {/* Default Value Indicator */}
+        {column.default !== undefined && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="h-6 w-6 flex items-center justify-center">
+                  <Equal className="h-3 w-3 text-cyan-500" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs font-mono">
+                <p>DEFAULT {String(column.default)}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+
         {/* NULL/NOT NULL - Simple N */}
         <TooltipProvider>
           <Tooltip>
@@ -546,7 +633,7 @@ export function ColumnRow({
               <MoreHorizontal className="h-3.5 w-3.5" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 p-1.5">
+          <DropdownMenuContent align="end" className="w-56 p-1.5">
             <DropdownMenuItem
               onClick={() =>
                 updateColumn(tableId, columnIndex, {
@@ -558,6 +645,63 @@ export function ColumnRow({
               Set {column.required ? 'NULL' : 'NOT NULL'}
             </DropdownMenuItem>
             <DropdownMenuSeparator className="my-1.5" />
+            {/* Default Value Section */}
+            <div className="px-2 py-1.5">
+              <p className="text-xs font-medium text-muted-foreground mb-2">
+                Default Value
+              </p>
+              <Input
+                value={column.default ?? ''}
+                onChange={(e) =>
+                  updateColumn(tableId, columnIndex, {
+                    default: e.target.value || undefined,
+                  })
+                }
+                className="h-7 text-xs font-mono mb-2"
+                placeholder={
+                  isEnumColumn
+                    ? 'Select or type value...'
+                    : 'e.g. NOW(), true, 0'
+                }
+              />
+              {/* Type-aware suggestions */}
+              <div className="flex flex-wrap gap-1">
+                {getDefaultValueSuggestions(
+                  column.format,
+                  !!isEnumColumn,
+                  enumValues,
+                  column.isArray,
+                )
+                  .slice(0, 6)
+                  .map((val) => (
+                    <button
+                      key={val}
+                      onClick={() =>
+                        updateColumn(tableId, columnIndex, { default: val })
+                      }
+                      className={cn(
+                        'text-[10px] px-1.5 py-0.5 rounded border transition-colors font-mono',
+                        column.default === val
+                          ? 'bg-primary/10 border-primary/50 text-primary'
+                          : 'border-border/50 text-muted-foreground hover:bg-muted/50',
+                      )}
+                    >
+                      {val.length > 12 ? val.slice(0, 10) + '…' : val}
+                    </button>
+                  ))}
+              </div>
+              {column.default && (
+                <button
+                  onClick={() =>
+                    updateColumn(tableId, columnIndex, { default: undefined })
+                  }
+                  className="mt-2 text-[10px] text-destructive hover:underline"
+                >
+                  Clear default
+                </button>
+              )}
+            </div>
+            <DropdownMenuSeparator className="my-1.5" />
             <DropdownMenuItem
               onClick={() => deleteColumn(tableId, columnIndex)}
               className="text-destructive py-2 px-2 rounded-md focus:text-destructive focus:bg-destructive/10"
@@ -568,6 +712,6 @@ export function ColumnRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-    </div>
+    </div >
   );
 }
