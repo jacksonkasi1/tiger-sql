@@ -45,6 +45,7 @@ import {
   X,
   Pencil,
   List,
+  Equal,
 } from 'lucide-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -231,7 +232,7 @@ export function ColumnRow({
         onChange={(e) =>
           updateColumn(tableId, columnIndex, { title: e.target.value })
         }
-        className="h-8 flex-[1.3] min-w-[80px] text-xs font-mono border-border/40 bg-transparent hover:bg-background hover:border-border/60 focus-visible:bg-background focus-visible:border-primary/50 focus-visible:ring-1 focus-visible:ring-ring/15 px-2 rounded"
+        className="h-7 flex-[1.3] min-w-[80px] text-xs font-mono border-border/40 bg-transparent hover:bg-background hover:border-border/60 focus-visible:bg-background focus-visible:border-primary/50 focus-visible:ring-1 focus-visible:ring-ring/15 px-2 rounded"
         placeholder="column_name"
       />
 
@@ -249,7 +250,7 @@ export function ColumnRow({
                     variant="ghost"
                     role="combobox"
                     aria-expanded={typeOpen}
-                    className="h-8 flex-1 justify-between text-xs font-mono px-2 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all duration-150 rounded"
+                    className="h-7 flex-1 justify-between text-xs font-mono px-2 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all duration-150 rounded"
                   >
                     <div className="flex items-center gap-1 min-w-0 max-w-12">
                       <List className="h-3 w-3 text-purple-500 shrink-0" />
@@ -266,7 +267,7 @@ export function ColumnRow({
                 variant="ghost"
                 role="combobox"
                 aria-expanded={typeOpen}
-                className="h-8 flex-1 justify-between text-xs font-mono px-2 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all duration-150 rounded"
+                className="h-7 flex-1 justify-between text-xs font-mono px-2 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all duration-150 rounded"
               >
                 <span className="truncate min-w-0">{getTypeDisplayText()}</span>
                 <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-40" />
@@ -349,6 +350,22 @@ export function ColumnRow({
 
       {/* End Controls - Compact like DrawSQL */}
       <div className="flex items-center gap-0.5 shrink-0">
+        {/* Default Value Indicator */}
+        {column.default !== undefined && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="h-6 w-6 flex items-center justify-center">
+                  <Equal className="h-3 w-3 text-cyan-500" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs font-mono">
+                <p>DEFAULT {String(column.default)}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+
         {/* NULL/NOT NULL - Simple N */}
         <TooltipProvider>
           <Tooltip>
@@ -546,7 +563,7 @@ export function ColumnRow({
               <MoreHorizontal className="h-3.5 w-3.5" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48 p-1.5">
+          <DropdownMenuContent align="end" className="w-56 p-1.5">
             <DropdownMenuItem
               onClick={() =>
                 updateColumn(tableId, columnIndex, {
@@ -558,6 +575,122 @@ export function ColumnRow({
               Set {column.required ? 'NULL' : 'NOT NULL'}
             </DropdownMenuItem>
             <DropdownMenuSeparator className="my-1.5" />
+            {/* Default Value Section */}
+            <div className="px-2 py-1.5">
+              <p className="text-xs font-medium text-muted-foreground mb-2">
+                Default Value
+              </p>
+              <Input
+                value={column.default ?? ''}
+                onChange={(e) =>
+                  updateColumn(tableId, columnIndex, {
+                    default: e.target.value || undefined,
+                  })
+                }
+                className="h-7 text-xs font-mono mb-2"
+                placeholder={
+                  isEnumColumn
+                    ? 'Select or type value...'
+                    : 'e.g. NOW(), true, 0'
+                }
+              />
+              {/* Type-aware suggestions */}
+              <div className="flex flex-wrap gap-1">
+                {(() => {
+                  // Determine suggestions based on column type
+                  let suggestions: string[] = [];
+                  const format = (column.format || '').toLowerCase();
+
+                  if (isEnumColumn && enumValues.length > 0) {
+                    // Enum columns: show enum values as quoted strings
+                    suggestions = enumValues.map((v) => `'${v}'`);
+                  } else if (format === 'boolean' || format === 'bool') {
+                    suggestions = ['true', 'false'];
+                  } else if (
+                    format.includes('timestamp') ||
+                    format === 'timestamptz'
+                  ) {
+                    suggestions = ['NOW()', 'CURRENT_TIMESTAMP'];
+                  } else if (format === 'date') {
+                    suggestions = ['CURRENT_DATE', 'NOW()'];
+                  } else if (format === 'time') {
+                    suggestions = ['CURRENT_TIME'];
+                  } else if (format === 'uuid') {
+                    suggestions = ['uuid_generate_v4()', 'gen_random_uuid()'];
+                  } else if (
+                    format.includes('int') ||
+                    format === 'serial' ||
+                    format === 'bigserial'
+                  ) {
+                    suggestions = ['0', '1', '-1'];
+                  } else if (
+                    format.includes('numeric') ||
+                    format.includes('decimal') ||
+                    format === 'real' ||
+                    format.includes('float') ||
+                    format === 'double precision'
+                  ) {
+                    suggestions = ['0', '0.0', '1.0'];
+                  } else if (format === 'money') {
+                    suggestions = ['0.00', "'$0.00'"];
+                  } else if (
+                    format === 'text' ||
+                    format.includes('varchar') ||
+                    format.includes('char')
+                  ) {
+                    suggestions = ["''"];
+                  } else if (format === 'json' || format === 'jsonb') {
+                    suggestions = ["'{}'", "'[]'", 'NULL'];
+                  } else if (format === 'bytea') {
+                    suggestions = ["'\\x'", "''"];
+                  } else if (format === 'interval') {
+                    suggestions = ["'0'", "'1 day'", "'1 hour'"];
+                  } else if (format === 'inet' || format === 'cidr') {
+                    suggestions = ["'0.0.0.0'", "'::1'"];
+                  } else if (
+                    format === 'point' ||
+                    format === 'line' ||
+                    format === 'polygon' ||
+                    format === 'geometry'
+                  ) {
+                    suggestions = ["'(0,0)'"];
+                  } else if (format.includes('[]') || column.isArray) {
+                    suggestions = ["'{}'", 'ARRAY[]'];
+                  } else {
+                    // Generic fallback
+                    suggestions = ['NULL'];
+                  }
+
+                  return suggestions.slice(0, 6).map((val) => (
+                    <button
+                      key={val}
+                      onClick={() =>
+                        updateColumn(tableId, columnIndex, { default: val })
+                      }
+                      className={cn(
+                        'text-[10px] px-1.5 py-0.5 rounded border transition-colors font-mono',
+                        column.default === val
+                          ? 'bg-primary/10 border-primary/50 text-primary'
+                          : 'border-border/50 text-muted-foreground hover:bg-muted/50',
+                      )}
+                    >
+                      {val.length > 12 ? val.slice(0, 10) + '…' : val}
+                    </button>
+                  ));
+                })()}
+              </div>
+              {column.default && (
+                <button
+                  onClick={() =>
+                    updateColumn(tableId, columnIndex, { default: undefined })
+                  }
+                  className="mt-2 text-[10px] text-destructive hover:underline"
+                >
+                  Clear default
+                </button>
+              )}
+            </div>
+            <DropdownMenuSeparator className="my-1.5" />
             <DropdownMenuItem
               onClick={() => deleteColumn(tableId, columnIndex)}
               className="text-destructive py-2 px-2 rounded-md focus:text-destructive focus:bg-destructive/10"
@@ -568,6 +701,6 @@ export function ColumnRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-    </div>
+    </div >
   );
 }
