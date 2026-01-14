@@ -4,6 +4,11 @@ import { useState, useCallback, useEffect } from 'react';
 import { useStore } from '@/lib/store';
 import { parseSQLSchemaAsync } from '@/lib/sql-parser';
 import {
+  validateSchemaJSON,
+  extractImportData,
+  detectFileType,
+} from '@/lib/json-schema-io';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -27,9 +32,15 @@ interface ImportSQLProps {
 }
 
 export function ImportSQL({ open, onClose }: ImportSQLProps) {
-  const { tables, setTables, triggerLayout, triggerFitView } = useStore();
+  const {
+    tables,
+    setTables,
+    triggerLayout,
+    triggerFitView,
+  } = useStore();
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [fileType, setFileType] = useState<'sql' | 'json' | 'unknown'>('unknown');
   const [isProcessing, setIsProcessing] = useState(false);
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
   const [pendingImport, setPendingImport] = useState<{
@@ -45,6 +56,7 @@ export function ImportSQL({ open, onClose }: ImportSQLProps) {
 
   const resetState = useCallback(() => {
     setFile(null);
+    setFileType('unknown');
     setParseResult(null);
     setIsDragging(false);
     setShowOverwriteConfirm(false);
@@ -94,18 +106,6 @@ export function ImportSQL({ open, onClose }: ImportSQLProps) {
     [setTables, triggerLayout, triggerFitView, onClose, resetState]
   );
 
-  const handleConfirmOverwrite = useCallback(() => {
-    if (pendingImport) {
-      setShowOverwriteConfirm(false);
-      setIsProcessing(true);
-      performImport(
-        pendingImport.definition,
-        pendingImport.paths,
-        pendingImport.tableCount
-      );
-    }
-  }, [pendingImport, performImport]);
-
   const handleCancelOverwrite = useCallback(() => {
     setShowOverwriteConfirm(false);
     setPendingImport(null);
@@ -133,15 +133,18 @@ export function ImportSQL({ open, onClose }: ImportSQLProps) {
     const sqlFile = files.find(
       (f) =>
         f.name.endsWith('.sql') ||
+        f.name.endsWith('.json') ||
         f.type === 'application/sql' ||
+        f.type === 'application/json' ||
         f.type === 'text/plain'
     );
 
     if (sqlFile) {
       setFile(sqlFile);
+      setFileType(detectFileType(sqlFile.name));
       setParseResult(null);
     } else {
-      toast.error('Please upload a valid SQL file (.sql)');
+      toast.error('Please upload a valid schema file (.sql or .json)');
     }
   }, []);
 
@@ -149,7 +152,9 @@ export function ImportSQL({ open, onClose }: ImportSQLProps) {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const { files } = e.target;
       if (files && files.length > 0) {
-        setFile(files[0]);
+        const selectedFile = files[0];
+        setFile(selectedFile);
+        setFileType(detectFileType(selectedFile.name));
         setParseResult(null);
       }
     },
@@ -164,6 +169,63 @@ export function ImportSQL({ open, onClose }: ImportSQLProps) {
 
     try {
       const text = await file.text();
+
+      // Handle JSON import
+      if (fileType === 'json') {
+        console.log('[Import] Starting JSON validation...');
+        const validationResult = validateSchemaJSON(text);
+
+        if (!validationResult.valid) {
+          setParseResult({
+            success: false,
+            message: `Invalid JSON: ${validationResult.errors.join(', ')}`,
+          });
+          toast.error('Invalid JSON schema file');
+          setIsProcessing(false);
+          return;
+        }
+
+        if (!validationResult.data) {
+          setParseResult({
+            success: false,
+            message: 'Failed to extract data from JSON file',
+          });
+          toast.error('Failed to parse JSON');
+          setIsProcessing(false);
+          return;
+        }
+
+        // Show warnings if any
+        if (validationResult.warnings.length > 0) {
+          validationResult.warnings.forEach((warning) => {
+            toast.warning(warning);
+          });
+        }
+
+        const importData = extractImportData(validationResult.data);
+        console.log('[Import] JSON parsed, found', importData.tableCount, 'tables');
+
+        // Check for existing schema
+        const hasExistingSchema = Object.keys(tables).length > 0;
+
+        if (hasExistingSchema) {
+          // Store pending JSON import for confirmation
+          setPendingImport({
+            definition: importData.tables,
+            paths: {},
+            tableCount: importData.tableCount,
+            // Additional JSON-specific data stored in closure
+            _jsonData: importData,
+          } as any);
+          setShowOverwriteConfirm(true);
+          setIsProcessing(false);
+          return;
+        }
+
+        // No existing schema, import directly
+        performJSONImport(importData);
+        return;
+      }
 
       // Parse the SQL schema ASYNCHRONOUSLY (non-blocking!)
       console.log('[Import] Starting async SQL parsing...');
@@ -202,8 +264,8 @@ export function ImportSQL({ open, onClose }: ImportSQLProps) {
             description: col.pk
               ? '<pk/>'
               : col.fk
-              ? `\`${col.fk}\``
-              : undefined,
+                ? `\`${col.fk}\``
+                : undefined,
           };
 
           if (col.required) {
@@ -240,14 +302,79 @@ export function ImportSQL({ open, onClose }: ImportSQLProps) {
       console.error('Error parsing SQL file:', error);
       setParseResult({
         success: false,
-        message: `Error parsing SQL file: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
+        message: `Error parsing SQL file: ${error instanceof Error ? error.message : 'Unknown error'
+          }`,
       });
       toast.error('Failed to parse SQL file');
       setIsProcessing(false);
     }
-  }, [file, tables, performImport]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, fileType, tables, performImport]);
+
+  // Perform JSON import directly to store
+  const performJSONImport = useCallback(
+    (importData: ReturnType<typeof extractImportData>) => {
+      console.log('[Import] Starting JSON import...');
+
+      // Close dialog FIRST to unblock UI
+      setIsProcessing(false);
+      onClose();
+      resetState();
+
+      toast.success(
+        `Imported ${importData.tableCount} table${importData.tableCount > 1 ? 's' : ''} from JSON`
+      );
+
+      // Apply import in next frame
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          // Set tables directly (without going through setTables transformation)
+          useStore.setState({
+            tables: importData.tables,
+            enumTypes: importData.enumTypes,
+            edgeRelationships: importData.edgeRelationships,
+            visibleSchemas: importData.visibleSchemas,
+            collapsedSchemas: importData.collapsedSchemas,
+          });
+
+          // Save to localStorage
+          useStore.getState().saveToLocalStorage();
+
+          console.log('[Import] JSON import applied');
+
+          // Schedule layout and fit view
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              triggerLayout();
+              setTimeout(() => {
+                triggerFitView();
+              }, 800);
+            });
+          });
+        });
+      });
+    },
+    [onClose, resetState, triggerLayout, triggerFitView]
+  );
+
+  // Update handleConfirmOverwrite to handle JSON imports
+  const handleConfirmOverwriteWithJSON = useCallback(() => {
+    if (pendingImport) {
+      setShowOverwriteConfirm(false);
+      setIsProcessing(true);
+
+      // Check if this is a JSON import (has _jsonData)
+      if ((pendingImport as any)._jsonData) {
+        performJSONImport((pendingImport as any)._jsonData);
+      } else {
+        performImport(
+          pendingImport.definition,
+          pendingImport.paths,
+          pendingImport.tableCount
+        );
+      }
+    }
+  }, [pendingImport, performImport, performJSONImport]);
 
   const handleClose = useCallback(() => {
     if (!isProcessing) {
@@ -269,10 +396,10 @@ export function ImportSQL({ open, onClose }: ImportSQLProps) {
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Import SQL Schema</DialogTitle>
+          <DialogTitle>Import Schema</DialogTitle>
           <DialogDescription>
-            Upload a PostgreSQL schema file (.sql) to visualize your database
-            structure. Supports CREATE TABLE and CREATE VIEW statements.
+            Upload a PostgreSQL schema file (.sql) or JSON export (.json) to
+            visualize your database structure.
           </DialogDescription>
         </DialogHeader>
 
@@ -285,10 +412,9 @@ export function ImportSQL({ open, onClose }: ImportSQLProps) {
             className={`
               relative border-2 border-dashed rounded-lg p-8
               transition-colors duration-200 ease-in-out
-              ${
-                isDragging
-                  ? 'border-primary bg-primary/5'
-                  : 'border-muted-foreground/25 hover:border-muted-foreground/50'
+              ${isDragging
+                ? 'border-primary bg-primary/5'
+                : 'border-muted-foreground/25 hover:border-muted-foreground/50'
               }
               ${file ? 'bg-muted/50' : ''}
             `}
@@ -296,7 +422,7 @@ export function ImportSQL({ open, onClose }: ImportSQLProps) {
             <input
               type="file"
               id="sql-file-input"
-              accept=".sql,text/plain,application/sql"
+              accept=".sql,.json,text/plain,application/sql,application/json"
               onChange={handleFileInput}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               disabled={isProcessing}
@@ -336,7 +462,7 @@ export function ImportSQL({ open, onClose }: ImportSQLProps) {
                     </p>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Supports .sql files (PostgreSQL schema)
+                    Supports .sql and .json files
                   </p>
                 </>
               )}
@@ -348,10 +474,9 @@ export function ImportSQL({ open, onClose }: ImportSQLProps) {
             <div
               className={`
                 flex items-start space-x-2 p-4 rounded-lg
-                ${
-                  parseResult.success
-                    ? 'bg-green-500/10 text-green-700 dark:text-green-400'
-                    : 'bg-red-500/10 text-red-700 dark:text-red-400'
+                ${parseResult.success
+                  ? 'bg-green-500/10 text-green-700 dark:text-green-400'
+                  : 'bg-red-500/10 text-red-700 dark:text-red-400'
                 }
               `}
             >
@@ -426,7 +551,7 @@ export function ImportSQL({ open, onClose }: ImportSQLProps) {
               <Button variant="outline" onClick={handleCancelOverwrite}>
                 Cancel
               </Button>
-              <Button variant="destructive" onClick={handleConfirmOverwrite}>
+              <Button variant="destructive" onClick={handleConfirmOverwriteWithJSON}>
                 Overwrite Schema
               </Button>
             </div>
