@@ -232,7 +232,7 @@ export function ColumnRow({
         onChange={(e) =>
           updateColumn(tableId, columnIndex, { title: e.target.value })
         }
-        className="h-7 flex-[1.3] min-w-[80px] text-xs font-mono border-border/40 bg-transparent hover:bg-background hover:border-border/60 focus-visible:bg-background focus-visible:border-primary/50 focus-visible:ring-1 focus-visible:ring-ring/15 px-2 rounded"
+        className="h-8 flex-[1.3] min-w-[80px] text-xs font-mono border-border/40 bg-transparent hover:bg-background hover:border-border/60 focus-visible:bg-background focus-visible:border-primary/50 focus-visible:ring-1 focus-visible:ring-ring/15 px-2 rounded"
         placeholder="column_name"
       />
 
@@ -250,7 +250,7 @@ export function ColumnRow({
                     variant="ghost"
                     role="combobox"
                     aria-expanded={typeOpen}
-                    className="h-7 flex-1 justify-between text-xs font-mono px-2 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all duration-150 rounded"
+                    className="h-8 flex-1 justify-between text-xs font-mono px-2 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all duration-150 rounded"
                   >
                     <div className="flex items-center gap-1 min-w-0 max-w-12">
                       <List className="h-3 w-3 text-purple-500 shrink-0" />
@@ -267,7 +267,7 @@ export function ColumnRow({
                 variant="ghost"
                 role="combobox"
                 aria-expanded={typeOpen}
-                className="h-7 flex-1 justify-between text-xs font-mono px-2 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all duration-150 rounded"
+                className="h-8 flex-1 justify-between text-xs font-mono px-2 text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all duration-150 rounded"
               >
                 <span className="truncate min-w-0">{getTypeDisplayText()}</span>
                 <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-40" />
