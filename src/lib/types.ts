@@ -1,3 +1,50 @@
+// ** import types
+import type { RelationshipType } from '@/types/flow';
+
+// ============================================================================
+// JSON Export/Import Types
+// ============================================================================
+
+/**
+ * The complete JSON export format for Tiger SQL schemas.
+ * This format enables lossless round-trip export/import of schema data.
+ */
+export interface TigerSQLExport {
+  /** Export format version for future compatibility */
+  version: string;
+  /** ISO timestamp of when the export was created */
+  exportedAt: string;
+  /** The complete schema data */
+  schema: {
+    /** All table definitions exactly as stored internally */
+    tables: TableState;
+    /** Enum type definitions */
+    enumTypes: Record<string, EnumTypeDefinition>;
+    /** Relationship types between tables (edge metadata) */
+    edgeRelationships: Record<string, RelationshipType>;
+    /** Array of visible schema names */
+    visibleSchemas: string[];
+    /** Array of collapsed schema names */
+    collapsedSchemas: string[];
+  };
+  /** Optional metadata about the export */
+  metadata?: {
+    tableCount: number;
+    enumCount: number;
+    exportSource: string;
+  };
+}
+
+/**
+ * Result of validating a JSON schema import
+ */
+export interface ImportValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  data?: TigerSQLExport;
+}
+
 // ============================================================================
 // Operation History Types for Undo/Redo Support (Phase 5.2)
 // ============================================================================
@@ -8,12 +55,12 @@
 export interface OperationRecord {
   id: string;
   type:
-    | 'createTable'
-    | 'dropTable'
-    | 'renameTable'
-    | 'addColumn'
-    | 'dropColumn'
-    | 'alterColumn';
+  | 'createTable'
+  | 'dropTable'
+  | 'renameTable'
+  | 'addColumn'
+  | 'dropColumn'
+  | 'alterColumn';
   tableId: string;
   before: Table | null;
   after: Table | null;
@@ -206,14 +253,14 @@ export type StreamingDataPart =
   | { type: 'data-progress'; data: StreamingProgress; transient?: boolean }
   | { type: 'data-tables-batch'; data: StreamingTablesBatch; id?: string }
   | {
-      type: 'data-notification';
-      data: StreamingNotification;
-      transient?: boolean;
-    }
+    type: 'data-notification';
+    data: StreamingNotification;
+    transient?: boolean;
+  }
   | {
-      type: 'data-operation-history';
-      data: StreamingOperationHistory;
-    };
+    type: 'data-operation-history';
+    data: StreamingOperationHistory;
+  };
 
 /**
  * Extended UIMessage type with our custom data parts
@@ -226,6 +273,6 @@ export interface CustomUIMessage {
     | { type: 'data-progress'; data: StreamingProgress }
     | { type: 'data-tables-batch'; data: StreamingTablesBatch }
     | { type: 'data-notification'; data: StreamingNotification }
-    | { type: string; [key: string]: unknown } // For tool parts
+    | { type: string;[key: string]: unknown } // For tool parts
   >;
 }

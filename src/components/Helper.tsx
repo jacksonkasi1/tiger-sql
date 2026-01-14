@@ -4,10 +4,12 @@ import { useState } from 'react';
 import { useStore } from '@/lib/store';
 import { useClipboard } from '@/lib/hooks';
 import { downloadSQLSchema } from '@/lib/sql-exporter';
+import { exportSchemaToJSON, downloadSchemaJSON } from '@/lib/json-schema-io';
 import { toPng } from 'html-to-image';
 import {
   Share2,
   FileType,
+  FileJson,
   Database,
   Camera,
   Sparkles,
@@ -19,6 +21,7 @@ import {
 import { ModalTypes } from './ModalTypes';
 import { HelperZoom } from './HelperZoom';
 import { UndoRedoButtons } from './UndoRedoButtons';
+import { ChatOnboarding } from './ChatOnboarding';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -30,8 +33,17 @@ interface HelperProps {
 }
 
 export function Helper({ onChatOpen, isChatOpen = false }: HelperProps) {
-  const { tables, schemaView, supabaseApiKey, triggerLayout, triggerFitView } =
-    useStore();
+  const {
+    tables,
+    enumTypes,
+    edgeRelationships,
+    visibleSchemas,
+    collapsedSchemas,
+    schemaView,
+    supabaseApiKey,
+    triggerLayout,
+    triggerFitView,
+  } = useStore();
   const { copy, copied } = useClipboard();
   const [exportTypes, setExportTypes] = useState(false);
   const [isToolbarExpanded, setIsToolbarExpanded] = useState(true);
@@ -67,6 +79,42 @@ export function Helper({ onChatOpen, isChatOpen = false }: HelperProps) {
     } catch (error) {
       console.error('Error exporting SQL:', error);
       toast.error('Failed to export SQL schema', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  };
+
+  const handleExportJSON = () => {
+    try {
+      const tableCount = Object.keys(tables).length;
+
+      if (tableCount === 0) {
+        toast.error('No tables to export', {
+          description: 'Please import or create a schema first',
+        });
+        return;
+      }
+
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().split('T')[0];
+      const filename = `schema_${timestamp}.json`;
+
+      // Create export data and download
+      const exportData = exportSchemaToJSON(
+        tables,
+        enumTypes,
+        edgeRelationships,
+        visibleSchemas,
+        collapsedSchemas
+      );
+      downloadSchemaJSON(exportData, filename);
+
+      toast.success('JSON schema exported successfully', {
+        description: `Downloaded ${filename}`,
+      });
+    } catch (error) {
+      console.error('Error exporting JSON:', error);
+      toast.error('Failed to export JSON schema', {
         description: error instanceof Error ? error.message : 'Unknown error',
       });
     }
@@ -204,6 +252,15 @@ export function Helper({ onChatOpen, isChatOpen = false }: HelperProps) {
             <Button
               variant="outline"
               size="icon"
+              title="Export JSON Schema"
+              onClick={handleExportJSON}
+            >
+              <FileJson size={20} />
+            </Button>
+
+            <Button
+              variant="outline"
+              size="icon"
               title="Take a screenshot"
               onClick={screenshot}
             >
@@ -229,14 +286,16 @@ export function Helper({ onChatOpen, isChatOpen = false }: HelperProps) {
             </Button>
 
             {onChatOpen && (
-              <Button
-                variant="outline"
-                size="icon"
-                title="Open SQL AI Chat"
-                onClick={onChatOpen}
-              >
-                <MessageSquare size={20} />
-              </Button>
+              <ChatOnboarding>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title="Open SQL AI Chat"
+                  onClick={onChatOpen}
+                >
+                  <MessageSquare size={20} />
+                </Button>
+              </ChatOnboarding>
             )}
 
             <HelperZoom />
