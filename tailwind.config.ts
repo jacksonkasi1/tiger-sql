@@ -97,11 +97,20 @@ const config: Config = {
             transform: 'translateX(100%)',
           },
         },
+        'neon-spin': {
+          '0%': {
+            transform: 'rotate(0deg)',
+          },
+          '100%': {
+            transform: 'rotate(360deg)',
+          },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
         shimmer: 'shimmer 2s infinite',
+        'neon-spin': 'neon-spin 3s linear infinite',
       },
     },
   },

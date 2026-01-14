@@ -21,6 +21,7 @@ import {
 import { ModalTypes } from './ModalTypes';
 import { HelperZoom } from './HelperZoom';
 import { UndoRedoButtons } from './UndoRedoButtons';
+import { ChatOnboarding } from './ChatOnboarding';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -285,14 +286,16 @@ export function Helper({ onChatOpen, isChatOpen = false }: HelperProps) {
             </Button>
 
             {onChatOpen && (
-              <Button
-                variant="outline"
-                size="icon"
-                title="Open SQL AI Chat"
-                onClick={onChatOpen}
-              >
-                <MessageSquare size={20} />
-              </Button>
+              <ChatOnboarding>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  title="Open SQL AI Chat"
+                  onClick={onChatOpen}
+                >
+                  <MessageSquare size={20} />
+                </Button>
+              </ChatOnboarding>
             )}
 
             <HelperZoom />
