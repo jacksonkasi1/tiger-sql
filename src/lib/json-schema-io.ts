@@ -177,10 +177,11 @@ export function validateSchemaJSON(jsonString: string): ImportValidationResult {
 
     // Step 8: Version compatibility check
     if (data.version && typeof data.version === 'string') {
-        const [major] = data.version.split('.').map(Number);
+        const versionParts = data.version.split('.');
+        const major = parseInt(versionParts[0], 10);
         const [currentMajor] = EXPORT_VERSION.split('.').map(Number);
 
-        if (major > currentMajor) {
+        if (!isNaN(major) && major > currentMajor) {
             warnings.push(`Importing from newer version (${data.version}). Some features may not be supported.`);
         }
     }
