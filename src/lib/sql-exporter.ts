@@ -138,7 +138,7 @@ export function generateSQLSchema(tables: TableState): string {
       }
 
       // Default value
-      if (col.default) {
+      if (col.default !== undefined && col.default !== null && col.default !== '') {
         sql += ` DEFAULT ${col.default}`;
       }
 

@@ -82,6 +82,76 @@ const POSTGRES_TYPES = [
 
 type IndexType = 'primary_key' | 'unique_key' | 'index' | 'none';
 
+/**
+ * Get type-aware default value suggestions based on column format
+ */
+function getDefaultValueSuggestions(
+  format: string,
+  isEnumColumn: boolean,
+  enumValues: string[],
+  isArray?: boolean,
+): string[] {
+  const formatLower = (format || '').toLowerCase();
+
+  if (isEnumColumn && enumValues.length > 0) {
+    return enumValues.map((v) => `'${v}'`);
+  } else if (formatLower === 'boolean' || formatLower === 'bool') {
+    return ['true', 'false'];
+  } else if (
+    formatLower.includes('timestamp') ||
+    formatLower === 'timestamptz'
+  ) {
+    return ['NOW()', 'CURRENT_TIMESTAMP'];
+  } else if (formatLower === 'date') {
+    return ['CURRENT_DATE', 'NOW()'];
+  } else if (formatLower === 'time') {
+    return ['CURRENT_TIME'];
+  } else if (formatLower === 'uuid') {
+    return ['uuid_generate_v4()', 'gen_random_uuid()'];
+  } else if (
+    formatLower.includes('int') ||
+    formatLower === 'serial' ||
+    formatLower === 'bigserial'
+  ) {
+    return ['0', '1', '-1'];
+  } else if (
+    formatLower.includes('numeric') ||
+    formatLower.includes('decimal') ||
+    formatLower === 'real' ||
+    formatLower.includes('float') ||
+    formatLower === 'double precision'
+  ) {
+    return ['0', '0.0', '1.0'];
+  } else if (formatLower === 'money') {
+    return ['0.00', "'$0.00'"];
+  } else if (
+    formatLower === 'text' ||
+    formatLower.includes('varchar') ||
+    formatLower.includes('char')
+  ) {
+    return ["''"];
+  } else if (formatLower === 'json' || formatLower === 'jsonb') {
+    return ["'{}'", "'[]'", 'NULL'];
+  } else if (formatLower === 'bytea') {
+    return ["'\\x'", "''"];
+  } else if (formatLower === 'interval') {
+    return ["'0'", "'1 day'", "'1 hour'"];
+  } else if (formatLower === 'inet' || formatLower === 'cidr') {
+    return ["'0.0.0.0'", "'::1'"];
+  } else if (
+    formatLower === 'point' ||
+    formatLower === 'line' ||
+    formatLower === 'polygon' ||
+    formatLower === 'geometry'
+  ) {
+    return ["'(0,0)'"];
+  } else if (formatLower.includes('[]') || isArray) {
+    return ["'{}'", 'ARRAY[]'];
+  } else {
+    return ['NULL'];
+  }
+}
+
 interface ColumnRowProps {
   tableId: string;
   column: Column;
@@ -596,72 +666,14 @@ export function ColumnRow({
               />
               {/* Type-aware suggestions */}
               <div className="flex flex-wrap gap-1">
-                {(() => {
-                  // Determine suggestions based on column type
-                  let suggestions: string[] = [];
-                  const format = (column.format || '').toLowerCase();
-
-                  if (isEnumColumn && enumValues.length > 0) {
-                    // Enum columns: show enum values as quoted strings
-                    suggestions = enumValues.map((v) => `'${v}'`);
-                  } else if (format === 'boolean' || format === 'bool') {
-                    suggestions = ['true', 'false'];
-                  } else if (
-                    format.includes('timestamp') ||
-                    format === 'timestamptz'
-                  ) {
-                    suggestions = ['NOW()', 'CURRENT_TIMESTAMP'];
-                  } else if (format === 'date') {
-                    suggestions = ['CURRENT_DATE', 'NOW()'];
-                  } else if (format === 'time') {
-                    suggestions = ['CURRENT_TIME'];
-                  } else if (format === 'uuid') {
-                    suggestions = ['uuid_generate_v4()', 'gen_random_uuid()'];
-                  } else if (
-                    format.includes('int') ||
-                    format === 'serial' ||
-                    format === 'bigserial'
-                  ) {
-                    suggestions = ['0', '1', '-1'];
-                  } else if (
-                    format.includes('numeric') ||
-                    format.includes('decimal') ||
-                    format === 'real' ||
-                    format.includes('float') ||
-                    format === 'double precision'
-                  ) {
-                    suggestions = ['0', '0.0', '1.0'];
-                  } else if (format === 'money') {
-                    suggestions = ['0.00', "'$0.00'"];
-                  } else if (
-                    format === 'text' ||
-                    format.includes('varchar') ||
-                    format.includes('char')
-                  ) {
-                    suggestions = ["''"];
-                  } else if (format === 'json' || format === 'jsonb') {
-                    suggestions = ["'{}'", "'[]'", 'NULL'];
-                  } else if (format === 'bytea') {
-                    suggestions = ["'\\x'", "''"];
-                  } else if (format === 'interval') {
-                    suggestions = ["'0'", "'1 day'", "'1 hour'"];
-                  } else if (format === 'inet' || format === 'cidr') {
-                    suggestions = ["'0.0.0.0'", "'::1'"];
-                  } else if (
-                    format === 'point' ||
-                    format === 'line' ||
-                    format === 'polygon' ||
-                    format === 'geometry'
-                  ) {
-                    suggestions = ["'(0,0)'"];
-                  } else if (format.includes('[]') || column.isArray) {
-                    suggestions = ["'{}'", 'ARRAY[]'];
-                  } else {
-                    // Generic fallback
-                    suggestions = ['NULL'];
-                  }
-
-                  return suggestions.slice(0, 6).map((val) => (
+                {getDefaultValueSuggestions(
+                  column.format,
+                  !!isEnumColumn,
+                  enumValues,
+                  column.isArray,
+                )
+                  .slice(0, 6)
+                  .map((val) => (
                     <button
                       key={val}
                       onClick={() =>
@@ -676,8 +688,7 @@ export function ColumnRow({
                     >
                       {val.length > 12 ? val.slice(0, 10) + '…' : val}
                     </button>
-                  ));
-                })()}
+                  ))}
               </div>
               {column.default && (
                 <button
